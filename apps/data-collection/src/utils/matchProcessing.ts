@@ -1,9 +1,9 @@
+import { z } from "zod";
 import {
   RiotAPIClient,
   MatchDto,
   TimelineDto,
   ParticipantFrameDto,
-  ObjectivesDto,
   EliteMonsterKillEventDto,
   EventsTimeLineDto,
   ChampionKillEventDto,
@@ -12,55 +12,105 @@ import {
   ParticipantId,
   TeamId,
   type TeamPosition,
+  ParticipantIdSchema,
 } from "@draftking/riot-api";
 
-interface ParticipantTimelineData {
-  level: number;
-  kills: number;
-  deaths: number;
-  assists: number;
-  creepScore: number;
-  totalGold: number;
-  damageStats: {
-    magicDamageDoneToChampions: number;
-    physicalDamageDoneToChampions: number;
-    trueDamageDoneToChampions: number;
+const relevantTimestamps = [
+  900000, // 15 minutes
+  1200000, // 20 minutes
+  1500000, // 25 minutes
+  1800000, // 30 minutes
+] as const;
+
+const ProcessedParticipantTimelineSchema = z.object({
+  level: z.number(),
+  kills: z.number(),
+  deaths: z.number(),
+  assists: z.number(),
+  creepScore: z.number(),
+  totalGold: z.number(),
+  damageStats: z.object({
+    magicDamageDoneToChampions: z.number(),
+    physicalDamageDoneToChampions: z.number(),
+    trueDamageDoneToChampions: z.number(),
+  }),
+});
+
+
+const ProcessedTeamStatsSchema = z.object({
+  totalKills: z.number(),
+  totalDeaths: z.number(),
+  totalAssists: z.number(),
+  totalGold: z.number(),
+  towerKills: z.number(),
+  inhibitorKills: z.number(),
+  baronKills: z.number(),
+  dragonKills: z.number(),
+  riftHeraldKills: z.number(),
+});
+type ProcessedTeamStats = z.infer<typeof ProcessedTeamStatsSchema>;
+
+const ProcessedParticipantSchema = z.object({
+  championId: z.number(),
+  participantId: ParticipantIdSchema,
+  timeline: z.object({
+    900000: ProcessedParticipantTimelineSchema,
+    1200000: ProcessedParticipantTimelineSchema,
+    1500000: ProcessedParticipantTimelineSchema,
+    1800000: ProcessedParticipantTimelineSchema,
+  }),
+});
+
+const ProcessedTeamSchema = z.object({
+  win: z.boolean(),
+  participants: z.object({
+    TOP: ProcessedParticipantSchema,
+    JUNGLE: ProcessedParticipantSchema,
+    MIDDLE: ProcessedParticipantSchema,
+    BOTTOM: ProcessedParticipantSchema,
+    UTILITY: ProcessedParticipantSchema,
+  }),
+  teamStats: z.record(z.string(), ProcessedTeamStatsSchema),
+});
+
+const ProcessedMatchDataSchema = z.object({
+  gameId: z.number(),
+  gameDuration: z.number(),
+  gameVersion: z.string(),
+  queueId: z.number(),
+  teams: z.object({
+    "100": ProcessedTeamSchema,
+    "200": ProcessedTeamSchema,
+  }),
+});
+
+type ProcessedMatchData = z.infer<typeof ProcessedMatchDataSchema>;
+
+function initializeTeamStats(): Record<TeamId, ProcessedTeamStats> {
+  return {
+    100: {
+      totalKills: 0,
+      totalDeaths: 0,
+      totalAssists: 0,
+      totalGold: 0,
+      towerKills: 0,
+      inhibitorKills: 0,
+      baronKills: 0,
+      dragonKills: 0,
+      riftHeraldKills: 0,
+    },
+    200: {
+      totalKills: 0,
+      totalDeaths: 0,
+      totalAssists: 0,
+      totalGold: 0,
+      towerKills: 0,
+      inhibitorKills: 0,
+      baronKills: 0,
+      dragonKills: 0,
+      riftHeraldKills: 0,
+    },
   };
-}
-
-interface ProcessedTeamStats {
-  totalKills: number;
-  totalDeaths: number;
-  totalAssists: number;
-  totalGold: number;
-  towerKills: number;
-  inhibitorKills: number;
-  baronKills: number;
-  dragonKills: number;
-  riftHeraldKills: number;
-}
-
-interface ProcessedMatchData {
-  gameId: number;
-  gameDuration: number;
-  gameVersion: string;
-  queueId: number;
-  teams: Record<
-    TeamId,
-    {
-      win: boolean;
-      objectives: ObjectivesDto;
-      participants: Record<
-        TeamPosition,
-        {
-          championId: number;
-          participantId: ParticipantId;
-          timeline: Record<number, ParticipantTimelineData>;
-        }
-      >;
-      teamStats: Record<number, ProcessedTeamStats>;
-    }
-  >;
 }
 
 function initializeProcessedData(matchData: MatchDto): ProcessedMatchData {
@@ -72,25 +122,63 @@ function initializeProcessedData(matchData: MatchDto): ProcessedMatchData {
     teams: {
       100: {
         win: matchData.info.teams[0].win,
-        objectives: matchData.info.teams[0].objectives,
         participants: {
-          TOP: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          JUNGLE: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          MIDDLE: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          BOTTOM: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          UTILITY: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
+          TOP: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          JUNGLE: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          MIDDLE: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          BOTTOM: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          UTILITY: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
         },
         teamStats: {},
       },
       200: {
         win: matchData.info.teams[1].win,
-        objectives: matchData.info.teams[1].objectives,
         participants: {
-          TOP: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          JUNGLE: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          MIDDLE: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          BOTTOM: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
-          UTILITY: { championId: 0, participantId: 0 as ParticipantId, timeline: {} },
+          TOP: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          JUNGLE: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          MIDDLE: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          BOTTOM: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
+          UTILITY: {
+            championId: 0,
+            participantId: 0 as ParticipantId,
+            timeline: {},
+          },
         },
         teamStats: {},
       },
@@ -113,14 +201,12 @@ function initializeParticipantsData(
     { kills: number; deaths: number; assists: number }
   >;
 } {
-  const participantIdToTeamPosition: Partial<Record<
-    ParticipantId,
-    { teamId: TeamId; teamPosition: TeamPosition }
-  >> = {};
-  const participantStats: Partial<Record<
-    ParticipantId,
-    { kills: number; deaths: number; assists: number }
-  >> = {};
+  const participantIdToTeamPosition: Partial<
+    Record<ParticipantId, { teamId: TeamId; teamPosition: TeamPosition }>
+  > = {};
+  const participantStats: Partial<
+    Record<ParticipantId, { kills: number; deaths: number; assists: number }>
+  > = {};
 
   matchData.info.participants.forEach((participant) => {
     const teamId = participant.teamId as TeamId;
@@ -154,33 +240,6 @@ function initializeParticipantsData(
       ParticipantId,
       { kills: number; deaths: number; assists: number }
     >,
-  };
-}
-
-function initializeTeamStats(): Record<TeamId, ProcessedTeamStats> {
-  return {
-    100: {
-      totalKills: 0,
-      totalDeaths: 0,
-      totalAssists: 0,
-      totalGold: 0,
-      towerKills: 0,
-      inhibitorKills: 0,
-      baronKills: 0,
-      dragonKills: 0,
-      riftHeraldKills: 0,
-    },
-    200: {
-      totalKills: 0,
-      totalDeaths: 0,
-      totalAssists: 0,
-      totalGold: 0,
-      towerKills: 0,
-      inhibitorKills: 0,
-      baronKills: 0,
-      dragonKills: 0,
-      riftHeraldKills: 0,
-    },
   };
 }
 
@@ -300,10 +359,6 @@ function processTimelineFrame(
   processedData.teams[200].teamStats[timestamp] = { ...teamStats[200] };
 }
 
-function minutesToMs(minutes: number): number {
-  return minutes * 60 * 1000;
-}
-
 async function processMatchData(
   client: RiotAPIClient,
   matchId: string
@@ -324,13 +379,6 @@ async function processMatchData(
     initializeParticipantsData(matchData, processedData);
 
   const teamStats = initializeTeamStats();
-
-  const relevantTimestamps = [
-    minutesToMs(15),
-    minutesToMs(20),
-    minutesToMs(25),
-    minutesToMs(30),
-  ] as const;
 
   timelineData.info.frames.forEach((frame) => {
     processEvents(
@@ -361,7 +409,10 @@ async function processMatchData(
 
   // If not all relevant timestamps are included, duplicate the last valid timestamp
   for (let i = 1; i < relevantTimestamps.length; i++) {
-    const timestamp = relevantTimestamps[i] as number;
+    const timestamp = relevantTimestamps[i];
+    if (timestamp === undefined) {
+      throw new Error(`Timestamp ${timestamp} is undefined`);
+    }
     if (!(timestamp in processedData.teams[100].teamStats)) {
       processedData.teams[100].teamStats[timestamp] = processedData.teams[100]
         .teamStats[relevantTimestamps[i - 1] as number] as ProcessedTeamStats;
@@ -374,15 +425,14 @@ async function processMatchData(
             processedData.teams[teamId].participants[
               teamPosition as TeamPosition
             ];
-          participantData.timeline[timestamp] = participantData.timeline[
-            relevantTimestamps[i - 1] as number
-          ] as ParticipantTimelineData;
+          participantData.timeline[timestamp] =
+            participantData.timeline[relevantTimestamps[i - 1]];
         }
       }
     }
   }
 
-  return processedData;
+  return ProcessedMatchDataSchema.parse(processedData);
 }
 
 export { processMatchData, type ProcessedMatchData };
