@@ -12,9 +12,11 @@ import {
   ParticipantIdSchema,
   ParticipantId,
   TeamId,
+  type TeamPosition,
 } from "@draftking/riot-api";
 interface ProcessedParticipantData {
   championId: number;
+  teamPosition: TeamPosition;
   level: number;
   kills: number;
   deaths: number;
@@ -68,6 +70,7 @@ type ParticipantStats = Record<
     kills: number;
     deaths: number;
     assists: number;
+    teamPosition: TeamPosition;
   }
 >;
 
@@ -106,6 +109,7 @@ function initializeParticipantStats(matchData: MatchDto): ParticipantStats {
     participantStats[participant.participantId] = {
       championId: participant.championId,
       teamId: participant.teamId,
+      teamPosition: participant.teamPosition,
       kills: 0,
       deaths: 0,
       assists: 0,
@@ -228,6 +232,7 @@ function processTimelineFrame(
       // We know timestamp exists because we set it just before
       processedData.timeline[timestamp]!.participants[pId] = {
         championId: participantStats[pId].championId,
+        teamPosition: participantStats[pId].teamPosition,
         level: participantFrame.level,
         kills: participantStats[pId].kills,
         deaths: participantStats[pId].deaths,
@@ -303,6 +308,7 @@ async function processMatchData(
       `First relevant timestamp ${relevantTimestamps[0]} is not included in processed data`
     );
   }
+  // TODO: should get from last available timestamp instead
   // If note all relevant timestamps are included, duplicate the last valid timestamp
   for (let i = 1; i < relevantTimestamps.length; i++) {
     const timestamp = relevantTimestamps[i] as number; // safe because iterate over length
@@ -315,5 +321,7 @@ async function processMatchData(
 
   return processedData;
 }
+
+// TODO: order by teamPosition
 
 export { processMatchData, type ProcessedMatchData };

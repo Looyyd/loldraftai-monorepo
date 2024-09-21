@@ -37,14 +37,6 @@ if (!matchIds[0]) {
   throw new Error("No match ids found");
 }
 
-const match = await client.getMatchById(matchIds[0]);
-
-console.log(match);
-
-const timeline = await client.getMatchTimelineById(matchIds[0]);
-
-console.log(timeline);
-
 const processedData = await processMatchData(client, matchIds[0]);
 
 console.log(JSON.stringify(processedData, null, 2));

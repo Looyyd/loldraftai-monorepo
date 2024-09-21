@@ -12,3 +12,86 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum Tier {
+  CHALLENGER
+  GRANDMASTER
+  MASTER
+  DIAMOND
+  EMERALD
+  PLATINUM
+  GOLD
+  SILVER
+  BRONZE
+  IRON
+}
+
+enum Division {
+  I
+  II
+  III
+  IV
+}
+
+enum Region {
+  BR1
+  EUN1
+  EUW1
+  JP1
+  KR
+  LA1
+  LA2
+  ME1
+  NA1
+  OC1
+  PH2
+  RU
+  SG2
+  TH2
+  TR1
+  TW2
+  VN2
+}
+
+model Summoner {
+  id               String    @id @default(cuid())
+  summonerId       String
+  region           Region
+  puuid            String?   @unique
+  tier             Tier
+  rank             Division
+  leaguePoints     Int
+  rankUpdateTime   DateTime
+  matchesFetchedAt DateTime?
+
+  @@unique([summonerId, region])
+  @@index([puuid])
+  @@index([region])
+  @@index([matchesFetchedAt])
+}
+
+model Match {
+  id                    String    @id @default(cuid())
+  matchId               String
+  queueId               Int?
+  region                Region
+  averageTier           Tier
+  averageDivision       Division
+  gameVersionMajorPatch Int?
+  gameVersionMinorPatch Int?
+  gameDuration          Int?
+  gameStartTimestamp    DateTime?
+  processed             Boolean   @default(false)
+
+  // Detailed match data (stored as JSON)
+  matchData Json?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([matchId, region])
+  @@index([region])
+  @@index([processed])
+  @@index([gameStartTimestamp])
+}

@@ -62,6 +62,9 @@ export const TierDivisionPairSchema = z.union([
 ]);
 export type TierDivisionPair = z.infer<typeof TierDivisionPairSchema>;
 
+export const TeamPositionSchema = z.enum(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]);
+export type TeamPosition = z.infer<typeof TeamPositionSchema>;
+
 export const MiniSeriesDTOSchema = z.object({
   losses: z.number(),
   progress: z.string(),
@@ -446,7 +449,7 @@ export const ParticipantDtoSchema = z.object({
   summonerName: z.string(),
   teamEarlySurrendered: z.boolean(),
   teamId: TeamIdSchema,
-  teamPosition: z.string(),
+  teamPosition: TeamPositionSchema,
   timeCCingOthers: z.number(),
   timePlayed: z.number(),
   totalAllyJungleMinionsKilled: z.number(),
