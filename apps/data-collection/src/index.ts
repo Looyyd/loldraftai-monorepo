@@ -1,5 +1,6 @@
 import { RiotAPIClient } from "@draftking/riot-api";
 import { processMatchData } from "./utils/matchProcessing";
+import { PrismaClient } from "@draftking/riot-database";
 import { config } from "dotenv";
 
 config();
