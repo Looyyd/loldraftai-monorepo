@@ -81,6 +81,8 @@ model Match {
   gameVersionMinorPatch Int?
   gameDuration          Int?
   gameStartTimestamp    DateTime?
+  
+  // Processed contains matchData
   processed             Boolean   @default(false)
 
   // Detailed match data (stored as JSON)
