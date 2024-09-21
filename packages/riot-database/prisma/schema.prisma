@@ -85,8 +85,8 @@ model Match {
   // Processed contains matchData
   processed             Boolean   @default(false)
 
-  // Detailed match data (stored as JSON)
-  matchData Json?
+  // Detailed teams data
+  teams Json?
 
   // Timestamps
   createdAt DateTime @default(now())

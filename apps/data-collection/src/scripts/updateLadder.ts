@@ -1,4 +1,5 @@
 import Bottleneck from "bottleneck";
+import { differenceInHours } from "date-fns";
 import { sleep } from "../utils";
 import { TierDivisionPair, LeagueEntryDTO, Region } from "@draftking/riot-api"; // Adjust the import path as needed
 import { RiotAPIClient } from "@draftking/riot-api";
@@ -38,30 +39,45 @@ const limiter = new Bottleneck({
   maxConcurrent: 30,
 });
 
+let lastUpdate: Date | null = null;
+
 async function updateLadder() {
   try {
-    for (const tierDivision of tiersDivisions) {
-      console.log(`Updating ${tierDivision}`);
-      let page = 1;
-      let hasMore = true;
-      while (hasMore) {
-        await limiter.schedule(async () => {
-          const leagueEntries = await riotApiClient.getLeagueEntries(
-            queue,
-            tierDivision,
-            page
-          );
+    while (true) {
+      const now = new Date();
+      if (!lastUpdate || differenceInHours(now, lastUpdate) >= 24) {
+        console.log("Starting ladder update...");
+        lastUpdate = now;
+        for (const tierDivision of tiersDivisions) {
+          console.log(`Updating ${tierDivision}`);
+          let page = 1;
+          let hasMore = true;
+          while (hasMore) {
+            await limiter.schedule(async () => {
+              const leagueEntries = await riotApiClient.getLeagueEntries(
+                queue,
+                tierDivision,
+                page
+              );
 
-          if (leagueEntries.length === 0) {
-            hasMore = false;
-          } else {
-            for (const entry of leagueEntries) {
-              await upsertSummoner(entry);
-            }
-            page++;
+              if (leagueEntries.length === 0) {
+                hasMore = false;
+              } else {
+                for (const entry of leagueEntries) {
+                  await upsertSummoner(entry);
+                }
+                page++;
+              }
+            });
           }
-        });
+        }
+      } else {
+        const hoursUntilNextUpdate = 24 - differenceInHours(now, lastUpdate);
+        console.log(`Next update in ${hoursUntilNextUpdate.toFixed(2)} hours.`);
       }
+
+      // Sleep for 1 hour before checking again
+      await sleep(1000 * 60 * 60);
     }
   } catch (error) {
     console.error("Error updating ladder:", error);
@@ -95,7 +111,4 @@ async function upsertSummoner(entry: LeagueEntryDTO) {
   });
 }
 
-while (true) {
-  await updateLadder();
-  await sleep(1000 * 60 * 5);
-}
+updateLadder();

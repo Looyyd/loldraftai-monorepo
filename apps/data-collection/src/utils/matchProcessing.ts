@@ -36,7 +36,6 @@ const ProcessedParticipantTimelineSchema = z.object({
   }),
 });
 
-
 const ProcessedTeamStatsSchema = z.object({
   totalKills: z.number(),
   totalDeaths: z.number(),
@@ -76,6 +75,9 @@ const ProcessedTeamSchema = z.object({
 const ProcessedMatchDataSchema = z.object({
   gameId: z.number(),
   gameDuration: z.number(),
+  gameStartTimestamp: z.number(),
+  gameVersionMajorPatch: z.number(),
+  gameVersionMinorPatch: z.number(),
   gameVersion: z.string(),
   queueId: z.number(),
   teams: z.object({
@@ -117,7 +119,14 @@ function initializeProcessedData(matchData: MatchDto): ProcessedMatchData {
   const processedData: ProcessedMatchData = {
     gameId: matchData.info.gameId,
     gameDuration: matchData.info.gameDuration,
+    gameStartTimestamp: matchData.info.gameStartTimestamp,
     gameVersion: matchData.info.gameVersion,
+    gameVersionMajorPatch: parseInt(
+      matchData.info.gameVersion.split(".")[0] ?? "0"
+    ),
+    gameVersionMinorPatch: parseInt(
+      matchData.info.gameVersion.split(".")[1] ?? "0"
+    ),
     queueId: matchData.info.queueId,
     teams: {
       100: {

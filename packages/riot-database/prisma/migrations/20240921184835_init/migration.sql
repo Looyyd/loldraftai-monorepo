@@ -35,7 +35,7 @@ CREATE TABLE "Match" (
     "gameDuration" INTEGER,
     "gameStartTimestamp" TIMESTAMP(3),
     "processed" BOOLEAN NOT NULL DEFAULT false,
-    "matchData" JSONB,
+    "teams" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
