@@ -1,15 +1,15 @@
 # match_dataset.py
 import os
-import pandas as pd
-import torch
-from torch.utils.data import IterableDataset
-import pyarrow.parquet as pq
 import pickle
 import glob
 
+import torch
+from torch.utils.data import IterableDataset
+import pyarrow.parquet as pq
+
 
 class MatchDataset(IterableDataset):
-    def __init__(self, data_dir, label_encoders_path, transform=None):
+    def __init__(self, data_dir: str, label_encoders_path: str, transform=None):
         """
         Args:
             data_dir (str): Directory containing the Parquet files.
@@ -52,7 +52,7 @@ class MatchDataset(IterableDataset):
             parquet_file = pq.ParquetFile(file_path)
             for batch in parquet_file.iter_batches(batch_size=1000):
                 df_chunk = batch.to_pandas()
-                for idx, row in df_chunk.iterrows():
+                for _, row in df_chunk.iterrows():
                     sample = self._get_sample(row)
                     if sample:
                         yield sample

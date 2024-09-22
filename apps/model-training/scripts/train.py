@@ -1,21 +1,18 @@
 # train.py
 import os
+import pickle
+import glob
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from utils.match_dataset import MatchDataset
-from utils.model import MatchOutcomeTransformer
 from sklearn.metrics import accuracy_score, roc_auc_score
 import pyarrow.parquet as pq
-import pickle
-import glob
-import pandas as pd
 
-DATA_DIR = "./data/"
-TRAIN_DIR = os.path.join(DATA_DIR, "train")
-TEST_DIR = os.path.join(DATA_DIR, "test")
-LABEL_ENCODERS_PATH = os.path.join(DATA_DIR, "label_encoders.pkl")
+from utils.match_dataset import MatchDataset
+from utils.model import MatchOutcomeTransformer
+from utils import get_best_device, TRAIN_DIR, TEST_DIR, ENCODERS_PATH, MODEL_PATH
 
 
 def collate_fn(batch):
@@ -54,10 +51,10 @@ def get_max_champion_id():
 def train_model():
     # Initialize the datasets
     train_dataset = MatchDataset(
-        data_dir=TRAIN_DIR, label_encoders_path=LABEL_ENCODERS_PATH
+        data_dir=TRAIN_DIR, label_encoders_path=ENCODERS_PATH
     )
     test_dataset = MatchDataset(
-        data_dir=TEST_DIR, label_encoders_path=LABEL_ENCODERS_PATH
+        data_dir=TEST_DIR, label_encoders_path=ENCODERS_PATH
     )
 
     # Initialize the DataLoaders
@@ -72,7 +69,7 @@ def train_model():
     )
 
     # Determine the number of unique categories from label encoders
-    with open(LABEL_ENCODERS_PATH, "rb") as f:
+    with open(ENCODERS_PATH, "rb") as f:
         label_encoders = pickle.load(f)
     num_regions = len(label_encoders["region"].classes_)
     num_tiers = len(label_encoders["averageTier"].classes_)
@@ -93,12 +90,7 @@ def train_model():
         dropout=0.1,
     )
 
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
+    device = get_best_device()
     model.to(device)
     print(f"Using device: {device}")
 
@@ -157,7 +149,6 @@ def train_model():
         print(f"Validation Accuracy: {accuracy:.4f}, AUC: {auc:.4f}")
 
     # Save the model
-    MODEL_PATH = os.path.join(DATA_DIR, "match_outcome_model.pth")
     torch.save(model.state_dict(), MODEL_PATH)
     print(f"Model saved to {MODEL_PATH}")
 

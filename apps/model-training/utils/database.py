@@ -1,8 +1,22 @@
 # database.py
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, JSON
+import os
+import enum
+
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    Integer,
+    DateTime,
+    Boolean,
+    JSON,
+    Enum,
+    UniqueConstraint,
+    Index,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
+from sqlalchemy.sql import func
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -19,22 +33,70 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-# Define the Match model
+class Region(enum.Enum):
+    BR1 = "BR1"
+    EUN1 = "EUN1"
+    EUW1 = "EUW1"
+    JP1 = "JP1"
+    KR = "KR"
+    LA1 = "LA1"
+    LA2 = "LA2"
+    ME1 = "ME1"
+    NA1 = "NA1"
+    OC1 = "OC1"
+    PH2 = "PH2"
+    RU = "RU"
+    SG2 = "SG2"
+    TH2 = "TH2"
+    TR1 = "TR1"
+    TW2 = "TW2"
+    VN2 = "VN2"
+
+
+class Tier(enum.Enum):
+    CHALLENGER = "CHALLENGER"
+    GRANDMASTER = "GRANDMASTER"
+    MASTER = "MASTER"
+    DIAMOND = "DIAMOND"
+    EMERALD = "EMERALD"
+    PLATINUM = "PLATINUM"
+    GOLD = "GOLD"
+    SILVER = "SILVER"
+    BRONZE = "BRONZE"
+    IRON = "IRON"
+
+
+class Division(enum.Enum):
+    I = "I"
+    II = "II"
+    III = "III"
+    IV = "IV"
+
+
 class Match(Base):
     __tablename__ = "Match"
 
     id = Column(String, primary_key=True, index=True)
-    matchId = Column(String, unique=True, index=True, nullable=False)
+    matchId = Column(String, nullable=False)
     queueId = Column(Integer, nullable=True)
-    region = Column(String, index=True, nullable=False)
-    averageTier = Column(String, nullable=False)
-    averageDivision = Column(String, nullable=False)
+    region = Column(Enum(Region), index=True, nullable=False)
+    averageTier = Column(Enum(Tier), nullable=False)
+    averageDivision = Column(Enum(Division), nullable=False)
     gameVersionMajorPatch = Column(Integer, nullable=True)
     gameVersionMinorPatch = Column(Integer, nullable=True)
     gameDuration = Column(Integer, nullable=True)
     gameStartTimestamp = Column(DateTime, nullable=True)
     processed = Column(Boolean, default=False, index=True)
+    processingErrored = Column(Boolean, default=False, index=True)
     teams = Column(JSON, nullable=True)
+    createdAt = Column(DateTime, server_default=func.now)
+    updatedAt = Column(DateTime, server_default=func.now, onupdate=func.now)
+
+    __table_args__ = (
+        UniqueConstraint("matchId", "region", name="uq_match_id_region"),
+        Index("idx_processed_errored", "processed", "processingErrored"),
+        Index("idx_game_start_timestamp", "gameStartTimestamp"),
+    )
 
 
 # Function to create a new session
