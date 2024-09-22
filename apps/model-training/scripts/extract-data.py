@@ -1,14 +1,11 @@
 # export_data.py
 import os
+import pickle
 import pandas as pd
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from utils.database import Match, get_session
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-import pyarrow.parquet as pq
-import pickle
 
 # Define positions
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
