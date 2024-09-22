@@ -4,8 +4,8 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from match_dataset import MatchDataset
-from model import MatchOutcomeTransformer
+from utils.match_dataset import MatchDataset
+from utils.model import MatchOutcomeTransformer
 from sklearn.metrics import accuracy_score, roc_auc_score
 import pyarrow.parquet as pq
 import pickle
