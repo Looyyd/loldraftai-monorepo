@@ -118,14 +118,14 @@ def extract_features(match, label_encoders):
     teams = match.teams
     if not teams:
         return None  # Skip if teams data is missing
-    else:
-        # Sort team IDs to ensure consistent order
-        for team_id in sorted(teams.keys()):
-            participants = teams.get(team_id, {}).get("participants", {})
-            for position in POSITIONS:
-                participant = participants.get(position, {})
-                champion_id = participant.get("championId", 0)
-                champion_ids.append(champion_id)
+
+    # Sort team IDs to ensure consistent order
+    for team_id in sorted(teams.keys()):
+        participants = teams.get(team_id, {}).get("participants", {})
+        for position in POSITIONS:
+            participant = participants.get(position, {})
+            champion_id = participant.get("championId", 0)
+            champion_ids.append(champion_id)
 
     # Game outcome
     team_100_win = teams.get("100", {}).get("win", False)
