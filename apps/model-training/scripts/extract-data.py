@@ -32,7 +32,10 @@ def batch_query(session, batch_size=BATCH_SIZE):
     """
     last_id = None
     while True:
-        query = session.query(Match).filter(Match.processed is True)
+        query = session.query(Match).filter(
+            Match.processed is True,
+            Match.processingErrored is False
+        )
         if last_id:
             query = query.filter(Match.id > last_id)
         query = query.order_by(Match.id).limit(batch_size)
