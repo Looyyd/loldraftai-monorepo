@@ -81,9 +81,10 @@ model Match {
   gameVersionMinorPatch Int?
   gameDuration          Int?
   gameStartTimestamp    DateTime?
-  
+
   // Processed contains matchData
-  processed             Boolean   @default(false)
+  processed         Boolean @default(false)
+  processingErrored Boolean @default(false)
 
   // Detailed teams data
   teams Json?
@@ -92,8 +93,10 @@ model Match {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // TODO: can probably change to just unique, because starts with region name ex: EUW1_7117841287
   @@unique([matchId, region])
   @@index([region])
   @@index([processed])
+  @@index([processed, processingErrored])
   @@index([gameStartTimestamp])
 }

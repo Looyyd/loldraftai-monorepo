@@ -20,6 +20,7 @@ const prisma = new PrismaClient();
 
 // Rate limiter settings based on the API rate limits
 const limiter = new Bottleneck({
+  minTime: 20, // 20ms between requests (50 requests per second)
   // Limit: 2000 requests every 10 seconds
   reservoir: 2000,
   reservoirRefreshAmount: 2000,
@@ -36,6 +37,7 @@ async function processMatches() {
       const matches = await prisma.match.findMany({
         where: {
           processed: false,
+          processingErrored: false,
           region: region,
         },
         take: 1000, // Adjust the batch size as needed
@@ -80,6 +82,16 @@ async function processMatches() {
               console.log(`Processed match ${match.matchId}`);
             } catch (error) {
               console.error(`Error processing match ${match.matchId}:`, error);
+              // Mark the match as processed but with an error
+              await prisma.match.update({
+                where: {
+                  id: match.id,
+                },
+                data: {
+                  processed: true,
+                  processingErrored: true,
+                },
+              });
             }
           })
         )
