@@ -63,6 +63,7 @@ async function updateLadder() {
               if (leagueEntries.length === 0) {
                 hasMore = false;
               } else {
+                // TODO: batch update?
                 for (const entry of leagueEntries) {
                   await upsertSummoner(entry);
                 }
@@ -71,6 +72,7 @@ async function updateLadder() {
             });
           }
         }
+        console.log("Ladder updated");
       } else {
         const hoursUntilNextUpdate = 24 - differenceInHours(now, lastUpdate);
         console.log(`Next update in ${hoursUntilNextUpdate.toFixed(2)} hours.`);

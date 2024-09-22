@@ -53,6 +53,7 @@ async function processMatches() {
         matches.map((match) =>
           limiter.schedule(async () => {
             try {
+              // TODO: mark as processed if failed? or have failed flag?
               const processedData = await processMatchData(
                 riotApiClient,
                 match.matchId

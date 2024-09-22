@@ -73,6 +73,7 @@ async function collectMatchIds() {
                 }
               );
 
+              // TODO: batch upsert
               for (const matchId of matchIds) {
                 await prisma.match.upsert({
                   where: {
