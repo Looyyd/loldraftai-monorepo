@@ -32,7 +32,7 @@ def batch_query(session, batch_size=BATCH_SIZE):
     """
     last_id = None
     while True:
-        query = session.query(Match).filter(Match.processed == True)
+        query = session.query(Match).filter(Match.processed is True)
         if last_id:
             query = query.filter(Match.id > last_id)
         query = query.order_by(Match.id).limit(batch_size)
@@ -44,6 +44,9 @@ def batch_query(session, batch_size=BATCH_SIZE):
 
 
 def extract_and_save_batches():
+    """
+    Extract and save batches of data from the database.
+    """
     session = get_session()
     label_encoders = {
         "region": LabelEncoder(),
