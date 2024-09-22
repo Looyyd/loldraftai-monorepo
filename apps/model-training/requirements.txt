@@ -1,0 +1,9 @@
+scikit-learn
+pandas
+tqdm
+sqlalchemy
+psycopg2-binary
+pyarrow
+torch
+torchvision
+torchaudio
