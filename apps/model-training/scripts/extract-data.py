@@ -6,7 +6,7 @@ import enum
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sqlalchemy import distinct, Enum
+from sqlalchemy import distinct
 from tqdm import tqdm
 
 from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH

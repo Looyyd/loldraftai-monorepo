@@ -26,8 +26,8 @@ def create_inference_features(
         region_encoded = label_encoders["region"].transform([region])[0]
         tier_encoded = label_encoders["averageTier"].transform([tier])[0]
         division_encoded = label_encoders["averageDivision"].transform([division])[0]
-    except ValueError as e:
-        raise ValueError(f"Error encoding categorical features: {e}")
+    except ValueError as error:
+        raise ValueError(f"Error encoding categorical features: {error}")
 
     if len(champion_ids) != 10:
         raise ValueError("champion_ids must contain exactly 10 champion IDs")
@@ -52,8 +52,4 @@ if __name__ == "__main__":
         "champion_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],  # Example champion IDs
     }
 
-    try:
-        features = create_inference_features(**sample_input)
-        print("Created features for inference:", features)
-    except Exception as e:
-        print(f"Error creating features: {e}")
+    features = create_inference_features(**sample_input)
