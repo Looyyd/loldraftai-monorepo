@@ -7,6 +7,8 @@ import torch
 from torch.utils.data import IterableDataset
 import pyarrow.parquet as pq
 
+from utils.column_definitions import COLUMNS, ColumnType
+
 
 class MatchDataset(IterableDataset):
     def __init__(self, data_dir: str, label_encoders_path: str, transform=None):
@@ -58,22 +60,16 @@ class MatchDataset(IterableDataset):
                         yield sample
 
     def _get_sample(self, row):
-        # Extract features
-        region = row["region"]
-        average_tier = row["averageTier"]
-        average_division = row["averageDivision"]
-        champion_ids = row["champion_ids"]  # This is a list
+        sample = {}
+        for col, col_type in COLUMNS.items():
+            if col_type == ColumnType.CATEGORICAL:
+                sample[col] = torch.tensor(row[col], dtype=torch.long)
+            elif col_type == ColumnType.NUMERICAL:
+                sample[col] = torch.tensor(row[col], dtype=torch.float)
+            elif col_type == ColumnType.LIST:
+                sample[col] = torch.tensor(row[col], dtype=torch.long)
 
-        # Label
-        label = row["label"]
-
-        sample = {
-            "region": torch.tensor(region, dtype=torch.long),
-            "averageTier": torch.tensor(average_tier, dtype=torch.long),
-            "averageDivision": torch.tensor(average_division, dtype=torch.long),
-            "champion_ids": torch.tensor(champion_ids, dtype=torch.long),
-            "label": torch.tensor(label, dtype=torch.float),
-        }
+        sample["label"] = torch.tensor(row["label"], dtype=torch.float)
 
         if self.transform:
             sample = self.transform(sample)

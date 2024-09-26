@@ -11,6 +11,8 @@ from tqdm import tqdm
 
 from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH
 from utils.database import Match, get_session
+from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS
+
 
 # Define positions
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
@@ -47,16 +49,13 @@ def extract_and_save_batches():
     Extract and save batches of data from the database.
     """
     session = get_session()
-    label_encoders = {
-        "region": LabelEncoder(),
-        "averageTier": LabelEncoder(),
-        "averageDivision": LabelEncoder(),
-    }
-    categorical_cols = ["region", "averageTier", "averageDivision"]
+
+    label_encoders = {col: LabelEncoder() for col in CATEGORICAL_COLUMNS}
+
 
     # Collect unique values for label encoding using database queries
     unique_values = {}
-    for col in categorical_cols:
+    for col in CATEGORICAL_COLUMNS:
         query = session.query(distinct(getattr(Match, col))).filter(
             Match.processed == True,
             Match.processingErrored == False,
@@ -73,7 +72,7 @@ def extract_and_save_batches():
         print(f"{col}: {values}")
 
     # Fit label encoders
-    for col in categorical_cols:
+    for col in CATEGORICAL_COLUMNS:
         label_encoders[col].fit(unique_values[col])
 
     # Save label encoders
@@ -123,6 +122,7 @@ def extract_features(match, label_encoders):
     if not teams:
         return None  # Skip if teams data is missing
 
+    # TODO: modular implementation
     # Sort team IDs to ensure consistent order
     for team_id in sorted(teams.keys()):
         participants = teams.get(team_id, {}).get("participants", {})
@@ -132,8 +132,7 @@ def extract_features(match, label_encoders):
             champion_ids.append(champion_id)
 
     # Game outcome
-    team_100_win = teams.get("100", {}).get("win", False)
-    label = 1 if team_100_win else 0
+    label = 1 if match.teams.get("100", {}).get("win", False) else 0
 
     # Encode categorical features
     try:

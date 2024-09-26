@@ -13,24 +13,13 @@ import pyarrow.parquet as pq
 from utils.match_dataset import MatchDataset
 from utils.model import MatchOutcomeTransformer
 from utils import get_best_device, TRAIN_DIR, TEST_DIR, ENCODERS_PATH, MODEL_PATH
+from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS
 
 
 def collate_fn(batch):
-    """
-    Custom collate function to handle batching.
-    """
-    regions = torch.stack([item["region"] for item in batch])
-    average_tiers = torch.stack([item["averageTier"] for item in batch])
-    average_divisions = torch.stack([item["averageDivision"] for item in batch])
-    champion_ids = torch.stack([item["champion_ids"] for item in batch])
+    collated = {col: torch.stack([item[col] for item in batch]) for col in COLUMNS}
     labels = torch.stack([item["label"] for item in batch])
-
-    return {
-        "region": regions,
-        "averageTier": average_tiers,
-        "averageDivision": average_divisions,
-        "champion_ids": champion_ids,
-    }, labels
+    return collated, labels
 
 
 def get_max_champion_id():
@@ -50,12 +39,8 @@ def get_max_champion_id():
 
 def train_model():
     # Initialize the datasets
-    train_dataset = MatchDataset(
-        data_dir=TRAIN_DIR, label_encoders_path=ENCODERS_PATH
-    )
-    test_dataset = MatchDataset(
-        data_dir=TEST_DIR, label_encoders_path=ENCODERS_PATH
-    )
+    train_dataset = MatchDataset(data_dir=TRAIN_DIR, label_encoders_path=ENCODERS_PATH)
+    test_dataset = MatchDataset(data_dir=TEST_DIR, label_encoders_path=ENCODERS_PATH)
 
     # Initialize the DataLoaders
     train_loader = DataLoader(
@@ -68,21 +53,20 @@ def train_model():
         test_dataset, batch_size=64, num_workers=4, collate_fn=collate_fn
     )
 
-    # Determine the number of unique categories from label encoders
-    with open(ENCODERS_PATH, "rb") as f:
-        label_encoders = pickle.load(f)
-    num_regions = len(label_encoders["region"].classes_)
-    num_tiers = len(label_encoders["averageTier"].classes_)
-    num_divisions = len(label_encoders["averageDivision"].classes_)
-
     # Determine the maximum champion ID
     max_champion_id = get_max_champion_id()
 
+    # Determine the number of unique categories from label encoders
+    with open(ENCODERS_PATH, "rb") as f:
+        label_encoders = pickle.load(f)
+
+    num_categories = {
+        col: len(label_encoders[col].classes_) for col in CATEGORICAL_COLUMNS
+    }
+
     # Initialize the model
     model = MatchOutcomeTransformer(
-        num_regions=num_regions,
-        num_tiers=num_tiers,
-        num_divisions=num_divisions,
+        num_categories=num_categories,
         num_champions=max_champion_id,
         embed_dim=32,
         num_heads=4,
@@ -99,24 +83,22 @@ def train_model():
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     # Training loop
-    num_epochs = 10
+    num_epochs = 5
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
         for batch_idx, (features, labels) in enumerate(train_loader):
-            region = features["region"].to(device)
-            average_tier = features["averageTier"].to(device)
-            average_division = features["averageDivision"].to(device)
-            champion_ids = features["champion_ids"].to(device)
+            # Move all features to the device
+            features = {k: v.to(device) for k, v in features.items()}
             labels = labels.to(device)
 
             optimizer.zero_grad()
-            outputs = model(region, average_tier, average_division, champion_ids)
+            outputs = model(features)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
 
-            epoch_loss += loss.item() * region.size(0)
+            epoch_loss += loss.item() * labels.size(0)
 
             if (batch_idx + 1) % 100 == 0:
                 print(
@@ -132,13 +114,11 @@ def train_model():
         all_labels = []
         with torch.no_grad():
             for features, labels in test_loader:
-                region = features["region"].to(device)
-                average_tier = features["averageTier"].to(device)
-                average_division = features["averageDivision"].to(device)
-                champion_ids = features["champion_ids"].to(device)
+                # Move all features to the device
+                features = {k: v.to(device) for k, v in features.items()}
                 labels = labels.to(device)
 
-                outputs = model(region, average_tier, average_division, champion_ids)
+                outputs = model(features)
                 all_preds.extend(outputs.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
 

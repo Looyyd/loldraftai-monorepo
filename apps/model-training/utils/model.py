@@ -3,13 +3,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from utils.column_definitions import COLUMNS, ColumnType
+
 
 class MatchOutcomeTransformer(nn.Module):
     def __init__(
         self,
-        num_regions,
-        num_tiers,
-        num_divisions,
+        num_categories,
         num_champions,
         embed_dim=32,
         num_heads=4,
@@ -18,10 +18,16 @@ class MatchOutcomeTransformer(nn.Module):
     ):
         super(MatchOutcomeTransformer, self).__init__()
         # Embeddings
-        self.region_emb = nn.Embedding(num_regions, embed_dim)
-        self.tier_emb = nn.Embedding(num_tiers, embed_dim)
-        self.division_emb = nn.Embedding(num_divisions, embed_dim)
-        self.champion_emb = nn.Embedding(num_champions, embed_dim)
+        self.embeddings = nn.ModuleDict()
+        total_embed_dim = 0
+        for col, col_type in COLUMNS.items():
+            if col_type == ColumnType.CATEGORICAL:
+                self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
+                total_embed_dim += embed_dim
+            elif col_type == ColumnType.LIST:
+                if col == "champion_ids":
+                    self.embeddings[col] = nn.Embedding(num_champions, embed_dim)
+                    total_embed_dim += embed_dim * 10  # 10 champions per match
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -32,35 +38,24 @@ class MatchOutcomeTransformer(nn.Module):
         )
 
         # Fully connected layers
-        # Calculate the input dimension:
-        # region_emb + tier_emb + division_emb + champion_emb (flattened)
-        # Assume 10 champion_ids (5 per team)
-        num_champions_per_match = 10  # Adjust based on your data
-        self.fc1 = nn.Linear(embed_dim * (3 + num_champions_per_match), 128)
+        self.fc1 = nn.Linear(total_embed_dim, 128)
         self.fc2 = nn.Linear(128, 1)
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, region, tier, division, champion_ids):
-        # Embedding categorical features
-        region = self.region_emb(region)  # (batch_size, embed_dim)
-        tier = self.tier_emb(tier)  # (batch_size, embed_dim)
-        division = self.division_emb(division)  # (batch_size, embed_dim)
+    def forward(self, features):
+        embedded_features = []
+        for col, embedding_layer in self.embeddings.items():
+            if COLUMNS[col] == ColumnType.LIST:
+                # For champion_ids, we need to reshape after embedding
+                embedded = embedding_layer(features[col]).view(
+                    features[col].size(0), -1
+                )
+            else:
+                embedded = embedding_layer(features[col])
+            embedded_features.append(embedded)
 
-        # Embedding champion IDs
-        champion = self.champion_emb(
-            champion_ids
-        )  # (batch_size, num_champions_per_match, embed_dim)
-
-        # Flatten champion embeddings
-        champion = champion.view(
-            champion.size(0), -1
-        )  # (batch_size, num_champions_per_match * embed_dim)
-
-        # Concatenate all embeddings
-        x = torch.cat(
-            [region, tier, division, champion], dim=1
-        )  # (batch_size, 3*embed_dim + num_champions_per_match*embed_dim)
+        x = torch.cat(embedded_features, dim=1)
 
         # Pass through fully connected layers
         x = self.dropout(F.relu(self.fc1(x)))
@@ -71,14 +66,13 @@ class MatchOutcomeTransformer(nn.Module):
 
 if __name__ == "__main__":
     # Example usage
-    num_regions = 17
-    num_tiers = 10
-    num_divisions = 4
+    num_categories = {
+        col: 10 for col in COLUMNS if COLUMNS[col] == ColumnType.CATEGORICAL
+    }
     num_champions = 200
+
     model = MatchOutcomeTransformer(
-        num_regions=num_regions,
-        num_tiers=num_tiers,
-        num_divisions=num_divisions,
+        num_categories=num_categories,
         num_champions=num_champions,
         embed_dim=32,
         num_heads=4,

@@ -89,8 +89,8 @@ class Match(Base):
     processed = Column(Boolean, default=False, index=True)
     processingErrored = Column(Boolean, default=False, index=True)
     teams = Column(JSON, nullable=True)
-    createdAt = Column(DateTime, server_default=func.now)
-    updatedAt = Column(DateTime, server_default=func.now, onupdate=func.now)
+    createdAt = Column(DateTime, server_default=func.now())
+    updatedAt = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
         UniqueConstraint("matchId", "region", name="uq_match_id_region"),
