@@ -6,6 +6,7 @@ import glob
 import torch
 import torch.optim as optim
 import torch.nn as nn
+import wandb
 from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score, roc_auc_score
 import pyarrow.parquet as pq
@@ -64,6 +65,9 @@ def get_max_champion_id():
 
 
 def train_model():
+    # Initialize wandb
+    wandb.init(project="draftking", name="initial-setup")
+
     # Initialize the datasets
     train_dataset = MatchDataset(data_dir=TRAIN_DIR, label_encoders_path=ENCODERS_PATH)
     test_dataset = MatchDataset(data_dir=TEST_DIR, label_encoders_path=ENCODERS_PATH)
@@ -104,6 +108,8 @@ def train_model():
     model.to(device)
     print(f"Using device: {device}")
 
+    wandb.watch(model, log_freq=100)
+
     # Loss and optimizer
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
@@ -130,9 +136,17 @@ def train_model():
                 print(
                     f"Epoch [{epoch+1}/{num_epochs}], Step [{batch_idx+1}], Loss: {loss.item():.4f}"
                 )
+                wandb.log(
+                    {
+                        "train_loss": loss.item(),
+                        "epoch": epoch + 1,
+                        "batch": batch_idx + 1,
+                    }
+                )
 
         avg_loss = epoch_loss / len(train_loader)
         print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+        wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
         # Evaluation
         model.eval()
@@ -153,7 +167,9 @@ def train_model():
         accuracy = accuracy_score(all_labels, binary_preds)
         auc = roc_auc_score(all_labels, all_preds)
         print(f"Validation Accuracy: {accuracy:.4f}, AUC: {auc:.4f}")
+        wandb.log({"epoch": epoch + 1, "val_accuracy": accuracy, "val_auc": auc})
 
+    wandb.finish()
     # Save the model
     torch.save(model.state_dict(), MODEL_PATH)
     print(f"Model saved to {MODEL_PATH}")

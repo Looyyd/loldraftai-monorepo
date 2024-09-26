@@ -9,3 +9,5 @@ torchvision
 torchaudio
 
 ipykernel
+
+wandb
