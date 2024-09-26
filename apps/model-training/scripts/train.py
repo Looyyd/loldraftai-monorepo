@@ -13,12 +13,38 @@ import pyarrow.parquet as pq
 from utils.match_dataset import MatchDataset
 from utils.model import MatchOutcomeTransformer
 from utils import get_best_device, TRAIN_DIR, TEST_DIR, ENCODERS_PATH, MODEL_PATH
-from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS
+from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS, ColumnType
+
+
+def set_random_seeds(seed=42):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.mps.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
 
 def collate_fn(batch):
-    collated = {col: torch.stack([item[col] for item in batch]) for col in COLUMNS}
-    labels = torch.stack([item["label"] for item in batch])
+    collated = {}
+    for col, col_def in COLUMNS.items():
+        if col_def.column_type == ColumnType.LIST:
+            # For list columns, stack the tensors
+            collated[col] = torch.stack(
+                [item[col] for item in batch]
+            )  # Shape: [batch_size, seq_length]
+        elif col_def.column_type == ColumnType.CATEGORICAL:
+            # Convert list of integers to a tensor
+            collated[col] = torch.tensor(
+                [item[col] for item in batch], dtype=torch.long
+            )  # Shape: [batch_size]
+        elif col_def.column_type == ColumnType.NUMERICAL:
+            # Convert list of floats to a tensor
+            collated[col] = torch.tensor(
+                [item[col] for item in batch], dtype=torch.float
+            )  # Shape: [batch_size]
+    # Convert labels to a tensor
+    labels = torch.tensor([item["label"] for item in batch], dtype=torch.float)
     return collated, labels
 
 
@@ -134,4 +160,6 @@ def train_model():
 
 
 if __name__ == "__main__":
+    # Set random seeds for reproducibility
+    set_random_seeds()
     train_model()

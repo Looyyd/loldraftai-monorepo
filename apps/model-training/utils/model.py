@@ -1,4 +1,4 @@
-# model.py
+# utils/model.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,14 +20,14 @@ class MatchOutcomeTransformer(nn.Module):
         # Embeddings
         self.embeddings = nn.ModuleDict()
         total_embed_dim = 0
-        for col, col_type in COLUMNS.items():
-            if col_type == ColumnType.CATEGORICAL:
+        for col, col_def in COLUMNS.items():
+            if col_def.column_type == ColumnType.CATEGORICAL:
                 self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
                 total_embed_dim += embed_dim
-            elif col_type == ColumnType.LIST:
+            elif col_def.column_type == ColumnType.LIST:
                 if col == "champion_ids":
                     self.embeddings[col] = nn.Embedding(num_champions, embed_dim)
-                    total_embed_dim += embed_dim * 10  # 10 champions per match
+                    total_embed_dim += embed_dim * 10  # Assuming 10 champions per match
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -46,13 +46,18 @@ class MatchOutcomeTransformer(nn.Module):
     def forward(self, features):
         embedded_features = []
         for col, embedding_layer in self.embeddings.items():
-            if COLUMNS[col] == ColumnType.LIST:
-                # For champion_ids, we need to reshape after embedding
-                embedded = embedding_layer(features[col]).view(
+            if COLUMNS[col].column_type == ColumnType.LIST:
+                # For list columns, embed each element and flatten
+                embedded = embedding_layer(
+                    features[col]
+                )  # Shape: [batch_size, seq_length, embed_dim]
+                embedded = embedded.view(
                     features[col].size(0), -1
-                )
+                )  # Flatten to [batch_size, seq_length * embed_dim]
             else:
-                embedded = embedding_layer(features[col])
+                embedded = embedding_layer(
+                    features[col]
+                )  # Shape: [batch_size, embed_dim]
             embedded_features.append(embedded)
 
         x = torch.cat(embedded_features, dim=1)

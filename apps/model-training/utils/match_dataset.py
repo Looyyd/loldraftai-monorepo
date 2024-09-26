@@ -1,12 +1,10 @@
-# match_dataset.py
+# utils/match_dataset.py
 import os
-import pickle
 import glob
-
+import pickle
 import torch
 from torch.utils.data import IterableDataset
 import pyarrow.parquet as pq
-
 from utils.column_definitions import COLUMNS, ColumnType
 
 
@@ -21,10 +19,6 @@ class MatchDataset(IterableDataset):
         self.data_files = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
         self.transform = transform
         self.total_samples = self._count_total_samples()
-
-        # Load label encoders
-        with open(label_encoders_path, "rb") as f:
-            self.label_encoders = pickle.load(f)
 
     def _count_total_samples(self):
         total = 0
@@ -59,17 +53,21 @@ class MatchDataset(IterableDataset):
                     if sample:
                         yield sample
 
+
     def _get_sample(self, row):
         sample = {}
-        for col, col_type in COLUMNS.items():
-            if col_type == ColumnType.CATEGORICAL:
+        for col, col_def in COLUMNS.items():
+            if col_def.column_type == ColumnType.CATEGORICAL:
+                # Store as integer
+                sample[col] = int(row[col])
+            elif col_def.column_type == ColumnType.NUMERICAL:
+                # Store as float
+                sample[col] = float(row[col])
+            elif col_def.column_type == ColumnType.LIST:
+                # Keep tensors for list columns
                 sample[col] = torch.tensor(row[col], dtype=torch.long)
-            elif col_type == ColumnType.NUMERICAL:
-                sample[col] = torch.tensor(row[col], dtype=torch.float)
-            elif col_type == ColumnType.LIST:
-                sample[col] = torch.tensor(row[col], dtype=torch.long)
-
-        sample["label"] = torch.tensor(row["label"], dtype=torch.float)
+        # Ensure label is a float
+        sample["label"] = float(row["label"])
 
         if self.transform:
             sample = self.transform(sample)

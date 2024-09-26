@@ -1,4 +1,4 @@
-# database.py
+# utils/database.py
 import os
 import enum
 

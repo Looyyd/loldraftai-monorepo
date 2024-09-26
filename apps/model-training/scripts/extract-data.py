@@ -11,7 +11,12 @@ from tqdm import tqdm
 
 from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH
 from utils.database import Match, get_session
-from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS
+from utils.column_definitions import (
+    COLUMNS,
+    CATEGORICAL_COLUMNS,
+    extract_raw_features,
+    ColumnType,
+)
 
 
 # Define positions
@@ -44,45 +49,54 @@ def batch_query(session, batch_size=BATCH_SIZE):
         yield matches
 
 
+def create_label_encoders(session):
+    """
+    Create and fit label encoders for all categorical columns.
+    """
+    label_encoders = {}
+    for col in CATEGORICAL_COLUMNS:
+        print(f"Creating label encoder for {col}")
+        query = session.query(distinct(getattr(Match, col))).filter(
+            Match.processed == True,
+            Match.processingErrored == False,
+            getattr(Match, col) != None,  # Exclude NULL values
+        )
+        unique_values = [
+            value.value if isinstance(value, enum.Enum) else value
+            for (value,) in query.all()
+            if value is not None
+        ]
+        unique_values = sorted(
+            set(unique_values)
+        )  # Ensure uniqueness and consistent ordering
+
+        # Add a special 'UNKNOWN' value to handle unseen categories
+        unique_values.append("UNKNOWN")
+
+        print(f"Unique values for {col}: {unique_values}")
+
+        encoder = LabelEncoder()
+        encoder.fit(unique_values)
+        label_encoders[col] = encoder
+
+    return label_encoders
+
+
 def extract_and_save_batches():
     """
     Extract and save batches of data from the database.
     """
     session = get_session()
 
-    label_encoders = {col: LabelEncoder() for col in CATEGORICAL_COLUMNS}
-
-
-    # Collect unique values for label encoding using database queries
-    unique_values = {}
-    for col in CATEGORICAL_COLUMNS:
-        query = session.query(distinct(getattr(Match, col))).filter(
-            Match.processed == True,
-            Match.processingErrored == False,
-            getattr(Match, col) != None,  # Exclude NULL values
-        )
-        unique_values[col] = [
-            value.value if isinstance(value, enum.Enum) else value
-            for (value,) in query.all()
-            if value
-        ]  # Convert Enum to string and remove empty strings if any
-
-    print("Unique values for each column:")
-    for col, values in unique_values.items():
-        print(f"{col}: {values}")
-
-    # Fit label encoders
-    for col in CATEGORICAL_COLUMNS:
-        label_encoders[col].fit(unique_values[col])
+    # Create and fit label encoders
+    label_encoders = create_label_encoders(session)
 
     # Save label encoders
     with open(ENCODERS_PATH, "wb") as f:
         pickle.dump(label_encoders, f)
     print(f"Saved label encoders to {ENCODERS_PATH}")
 
-    # Second pass to process and save data batches
-    session.close()  # Close and reopen session to reset query
-    session = get_session()
+    # Process and save data batches
     batch_num = 0
     for matches in tqdm(batch_query(session), desc="Processing and saving batches"):
         data = []
@@ -107,54 +121,20 @@ def extract_and_save_batches():
     session.close()
 
 
-def extract_features(match, label_encoders):
-    """
-    Extract features from a match object.
-    """
-    # Extract basic features
-    region = match.region
-    tier = match.averageTier
-    division = match.averageDivision
+def extract_features(match: Match, label_encoders: dict):
+    features = extract_raw_features(match)
 
-    # Extract championIds for each position
-    champion_ids = []
-    teams = match.teams
-    if not teams:
-        return None  # Skip if teams data is missing
+    if len(features["champion_ids"]) != 10:
+        return None  # Skip this sample if it doesn't meet expectations
 
-    # TODO: modular implementation
-    # Sort team IDs to ensure consistent order
-    for team_id in sorted(teams.keys()):
-        participants = teams.get(team_id, {}).get("participants", {})
-        for position in POSITIONS:
-            participant = participants.get(position, {})
-            champion_id = participant.get("championId", 0)
-            champion_ids.append(champion_id)
+    # Apply label encoding for categorical features
+    for col, def_ in COLUMNS.items():
+        if def_.column_type == ColumnType.CATEGORICAL:
+            features[col] = label_encoders[col].transform([features[col]])[0]
 
-    # Game outcome
-    label = 1 if match.teams.get("100", {}).get("win", False) else 0
+    # Add the label
+    features["label"] = 1 if match.teams.get("100", {}).get("win", False) else 0
 
-    # Encode categorical features
-    try:
-        region_encoded = label_encoders["region"].transform(
-            [region.value if isinstance(region, enum.Enum) else region]
-        )[0]
-        tier_encoded = label_encoders["averageTier"].transform(
-            [tier.value if isinstance(tier, enum.Enum) else tier]
-        )[0]
-        division_encoded = label_encoders["averageDivision"].transform(
-            [division.value if isinstance(division, enum.Enum) else division]
-        )[0]
-    except ValueError:
-        return None  # Skip if encoding fails
-
-    features = {
-        "region": region_encoded,
-        "averageTier": tier_encoded,
-        "averageDivision": division_encoded,
-        "champion_ids": champion_ids,
-        "label": label,
-    }
     return features
 
 
