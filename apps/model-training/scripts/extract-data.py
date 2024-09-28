@@ -1,6 +1,7 @@
 # scripts/extract-data.py
 import os
 import pickle
+from collections import defaultdict
 import enum
 import shutil
 import pandas as pd
@@ -15,6 +16,7 @@ from utils import (
     ENCODERS_PATH,
     DATA_EXTRACTION_BATCH_SIZE,
     NUMERICAL_STATS_PATH,
+    TASK_STATS_PATH,
 )
 from utils.database import Match, get_session
 from utils.column_definitions import (
@@ -24,6 +26,7 @@ from utils.column_definitions import (
     extract_raw_features,
     ColumnType,
 )
+from utils.task_definitions import TASKS, TaskType
 
 
 # Define positions
@@ -113,6 +116,11 @@ def extract_and_save_batches():
     numerical_sumsq = {col: 0.0 for col in NUMERICAL_COLUMNS}
     total_count = 0
 
+    # Add variables to compute stats for task labels (e.g., game duration)
+    task_sums = defaultdict(float)
+    task_sumsq = defaultdict(float)
+    task_counts = defaultdict(int)
+
     # Process and save data batches
     batch_num = 0
     for matches in tqdm(batch_query(session), desc="Processing and saving batches"):
@@ -138,6 +146,19 @@ def extract_and_save_batches():
                 numerical_sums[col] += col_values.sum()
                 numerical_sumsq[col] += (col_values**2).sum()
 
+            # Update task label sums and sums of squares
+            for task_name, task_def in TASKS.items():
+                if task_def.task_type == TaskType.REGRESSION:
+                    task_values = df_train[task_name].values
+                    task_values = np.array(task_values)
+                    if task_name not in task_sums:
+                        task_sums[task_name] = 0.0
+                        task_sumsq[task_name] = 0.0
+                        task_counts[task_name] = 0
+                    task_sums[task_name] += task_values.sum()
+                    task_sumsq[task_name] += (task_values**2).sum()
+                    task_counts[task_name] += len(task_values)
+
             total_count += len(df_train)
 
             # Save to Parquet
@@ -159,10 +180,25 @@ def extract_and_save_batches():
         numerical_means[col] = mean
         numerical_stds[col] = std
 
+    # Compute mean and std for regression task labels
+    task_means = {}
+    task_stds = {}
+    for task_name in task_sums.keys():
+        mean = task_sums[task_name] / task_counts[task_name]
+        variance = (task_sumsq[task_name] / task_counts[task_name]) - (mean**2)
+        std = np.sqrt(variance)
+        task_means[task_name] = mean
+        task_stds[task_name] = std
+
     # Save numerical feature stats
     with open(NUMERICAL_STATS_PATH, "wb") as f:
         pickle.dump({"means": numerical_means, "stds": numerical_stds}, f)
     print(f"Saved numerical feature stats to {NUMERICAL_STATS_PATH}")
+
+    # Save task statistics
+    with open(TASK_STATS_PATH, "wb") as f:
+        pickle.dump({"means": task_means, "stds": task_stds}, f)
+    print(f"Saved task stats to {TASK_STATS_PATH}")
 
 
 def extract_features(match: Match, label_encoders: dict):
@@ -180,8 +216,12 @@ def extract_features(match: Match, label_encoders: dict):
         if features[col] == -1:
             return None  # Skip samples with missing numerical data
 
-    # Add the label
-    features["label"] = 1 if match.teams.get("100", {}).get("win", False) else 0
+    # Extract labels for all tasks
+    for task_name, task_def in TASKS.items():
+        task_label = task_def.extractor(match)
+        if task_label is None:
+            return None  # Skip sample if any label is missing
+        features[task_name] = task_label
 
     return features
 

@@ -10,7 +10,6 @@ from torch.nn.utils import clip_grad_norm_
 
 import wandb
 from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score, roc_auc_score
 import pyarrow.parquet as pq
 import argparse
 
@@ -23,6 +22,7 @@ from utils import (
     TEST_DIR,
     ENCODERS_PATH,
     MODEL_PATH,
+    TASK_STATS_PATH,
     TRAIN_BATCH_SIZE,
     NUMERICAL_STATS_PATH,
 )
@@ -32,6 +32,7 @@ from utils.column_definitions import (
     NUMERICAL_COLUMNS,
     ColumnType,
 )
+from utils.task_definitions import TASKS, TaskType
 
 DATALOADER_WORKERS = 4
 
@@ -50,6 +51,7 @@ def set_random_seeds(seed=42):
 def collate_fn(batch):
     with open(NUMERICAL_STATS_PATH, "rb") as f:
         stats = pickle.load(f)
+
     means = stats["means"]
     stds = stats["stds"]
 
@@ -74,9 +76,20 @@ def collate_fn(batch):
             std = stds[col] if stds[col] > 0 else 1.0  # Avoid division by zero
             values = (values - mean) / std
             collated[col] = values
-    # Convert labels to a tensor
-    labels = torch.tensor([item["label"] for item in batch], dtype=torch.float)
-    return collated, labels
+
+    # Collect labels for all tasks
+    collated_labels = {}
+    for task_name in TASKS.keys():
+        task_labels = [item[task_name] for item in batch]
+        if TASKS[task_name].task_type == TaskType.BINARY_CLASSIFICATION:
+            labels = torch.tensor(task_labels, dtype=torch.float)
+        elif TASKS[task_name].task_type == TaskType.REGRESSION:
+            labels = torch.tensor(task_labels, dtype=torch.float)
+        elif TASKS[task_name].task_type == TaskType.MULTICLASS_CLASSIFICATION:
+            labels = torch.tensor(task_labels, dtype=torch.long)
+        collated_labels[task_name] = labels
+
+    return collated, collated_labels
 
 
 def get_max_champion_id():
@@ -102,16 +115,21 @@ def train_model(run_name: str):
     unknown_champion_id = max_champion_id + 1
     num_champions = unknown_champion_id + 1  # Total number of embeddings
 
+    # Load task statistics
+    with open(TASK_STATS_PATH, "rb") as f:
+        task_stats = pickle.load(f)
     # Initialize the datasets with masking parameters
     train_dataset = MatchDataset(
         data_dir=TRAIN_DIR,
         mask_champions=MASK_CHAMPIONS,
         unknown_champion_id=unknown_champion_id,
+        task_stats=task_stats,
     )
     test_dataset = MatchDataset(
         data_dir=TEST_DIR,
         mask_champions=MASK_CHAMPIONS,
         unknown_champion_id=unknown_champion_id,
+        task_stats=task_stats,
     )
 
     # Initialize the DataLoaders
@@ -151,14 +169,21 @@ def train_model(run_name: str):
 
     wandb.watch(model, log_freq=100)
 
-    # Loss and optimizer
-    criterion = nn.BCELoss()
+    # Initialize loss functions for each task
+    criterion = {}
+    for task_name, task_def in TASKS.items():
+        if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
+            criterion[task_name] = nn.BCELoss()
+        elif task_def.task_type == TaskType.REGRESSION:
+            criterion[task_name] = nn.MSELoss()
+        elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
+            criterion[task_name] = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     # Add gradient clipping max norm
     max_grad_norm = 1.0
 
     # Training loop
-    num_epochs = 10
+    num_epochs = 15
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
@@ -166,70 +191,68 @@ def train_model(run_name: str):
         for batch_idx, (features, labels) in enumerate(train_loader):
             # Move all features to the device
             features = {k: v.to(device) for k, v in features.items()}
-            labels = labels.to(device)
+            labels = {k: v.to(device) for k, v in labels.items()}
 
             optimizer.zero_grad()
             outputs = model(features)
-            loss = criterion(outputs, labels)
-            loss.backward()
+
+            total_loss = 0.0
+            loss_dict = {}
+            for task_name, task_def in TASKS.items():
+                task_output = outputs[task_name]
+                task_label = labels[task_name]
+                task_loss = criterion[task_name](task_output, task_label)
+                weighted_loss = task_def.weight * task_loss
+                total_loss += weighted_loss
+                loss_dict[task_name] = task_loss.item()
+
+            total_loss.backward()
             grad_norm = clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
-            epoch_loss += loss.item()
+            epoch_loss += total_loss.item()
             epoch_steps += 1
 
+            # Logging
             if (batch_idx + 1) % 20 == 0:
-                print(
-                    f"Epoch [{epoch+1}/{num_epochs}], Step [{batch_idx+1}], Loss: {loss.item():.4f}"
-                )
-                wandb.log(
-                    {
-                        "train_loss": loss.item(),
-                        "epoch": epoch + 1,
-                        "batch": batch_idx + 1,
-                        "grad_norm": grad_norm,
-                    }
-                )
+                log_data = {
+                    "epoch": epoch + 1,
+                    "batch": batch_idx + 1,
+                    "grad_norm": grad_norm,
+                }
+                log_data.update({f"train_loss_{k}": v for k, v in loss_dict.items()})
+                wandb.log(log_data)
 
-        avg_loss = epoch_loss / epoch_steps
-        print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
-        wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
+            avg_loss = epoch_loss / epoch_steps
+            print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+            wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
         # Evaluation
         model.eval()
-        all_preds = []
-        all_labels = []
-        epoch_steps = 0
-        epoch_loss = 0.0
+        metrics = {task_name: [] for task_name in TASKS.keys()}
         with torch.no_grad():
             for features, labels in test_loader:
                 # Move all features to the device
                 features = {k: v.to(device) for k, v in features.items()}
-                labels = labels.to(device)
+                labels = {k: v.to(device) for k, v in labels.items()}
 
                 outputs = model(features)
-                all_preds.extend(outputs.cpu().numpy())
-                all_labels.extend(labels.cpu().numpy())
-                loss = criterion(outputs, labels)
-                epoch_loss += loss.item()
-                epoch_steps += 1
+                for task_name, task_def in TASKS.items():
+                    task_output = outputs[task_name]
+                    task_label = labels[task_name]
 
-        avg_loss = epoch_loss / epoch_steps
-        print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+                    if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
+                        preds = (task_output >= 0.5).float()
+                        accuracy = (preds == task_label).float().mean().item()
+                        metrics[task_name].append(accuracy)
+                    elif task_def.task_type == TaskType.REGRESSION:
+                        mse = nn.functional.mse_loss(task_output, task_label).item()
+                        metrics[task_name].append(mse)
 
-        # Calculate metrics
-        binary_preds = [1 if p >= 0.5 else 0 for p in all_preds]
-        accuracy = accuracy_score(all_labels, binary_preds)
-        auc = roc_auc_score(all_labels, all_preds)
-        print(f"Validation Accuracy: {accuracy:.4f}, AUC: {auc:.4f}")
-        wandb.log(
-            {
-                "epoch": epoch + 1,
-                "val_accuracy": accuracy,
-                "val_auc": auc,
-                "avg_val_loss": avg_loss,
-            }
-        )
+        # Log evaluation metrics
+        for task_name, values in metrics.items():
+            avg_metric = sum(values) / len(values)
+            wandb.log({f"val_{task_name}_metric": avg_metric})
 
     wandb.finish()
     # Save the model

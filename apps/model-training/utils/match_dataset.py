@@ -8,6 +8,8 @@ import pyarrow.parquet as pq
 
 from utils.column_definitions import COLUMNS, ColumnType
 from utils import PARQUET_READER_BATCH_SIZE
+from utils.task_definitions import TASKS, TaskType
+
 
 
 class MatchDataset(IterableDataset):
@@ -17,8 +19,10 @@ class MatchDataset(IterableDataset):
         transform=None,
         mask_champions=0.0,
         unknown_champion_id=None,
+        task_stats=None,
     ):
         self.data_files = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
+        self.task_stats = task_stats
         self.transform = transform
         self.total_samples = self._count_total_samples()
         self.mask_champions = mask_champions
@@ -89,8 +93,22 @@ class MatchDataset(IterableDataset):
                 sample[col] = torch.tensor(champion_ids, dtype=torch.long)
             else:
                 sample[col] = torch.tensor(row[col], dtype=torch.long)
-        # Ensure label is a float
-        sample["label"] = float(row["label"])
+
+        # Extract labels for all tasks
+        for task_name in TASKS.keys():
+            task_label = row[task_name]
+            if TASKS[task_name].task_type == TaskType.BINARY_CLASSIFICATION:
+                sample[task_name] = float(task_label)
+            elif TASKS[task_name].task_type == TaskType.REGRESSION:
+                # TODO: maybe move normalization of tasks and of features to the same place? collate function?
+                # Normalize the regression target
+                mean = self.task_stats["means"][task_name]
+                std = self.task_stats["stds"][task_name]
+                normalized_label = (float(task_label) - mean) / std
+                sample[task_name] = normalized_label
+
+            elif TASKS[task_name].task_type == TaskType.MULTICLASS_CLASSIFICATION:
+                sample[task_name] = int(task_label)
 
         if self.transform:
             sample = self.transform(sample)

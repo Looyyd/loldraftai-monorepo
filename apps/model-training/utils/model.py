@@ -11,6 +11,7 @@ from utils.column_definitions import (
     CATEGORICAL_COLUMNS,
     POSITIONS,
 )
+from utils.task_definitions import TASKS, TaskType
 
 
 class MatchOutcomeModel(nn.Module):
@@ -72,8 +73,20 @@ class MatchOutcomeModel(nn.Module):
             nn.BatchNorm1d(128),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(128, 1),
         )
+
+        # Create output layers for each task
+        self.output_layers = nn.ModuleDict()
+
+        for task_name, task_def in TASKS.items():
+            # Output layers for tasks using shared representation
+            if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
+                self.output_layers[task_name] = nn.Sequential(
+                    nn.Linear(128, 1),
+                    nn.Sigmoid(),
+                )
+            elif task_def.task_type == TaskType.REGRESSION:
+                self.output_layers[task_name] = nn.Linear(128, 1)
 
     def forward(self, features):
         embedded_features = []
@@ -128,10 +141,13 @@ class MatchOutcomeModel(nn.Module):
         x = torch.cat(embedded_features, dim=1)
 
         # Pass through fully connected layers
-        x = self.fc(x)
-        x = torch.sigmoid(x).squeeze(1)
+        x = self.fc(x)  # Shared representation
 
-        return x
+        outputs = {}
+        for task_name, output_layer in self.output_layers.items():
+            outputs[task_name] = output_layer(x).squeeze(-1)
+
+        return outputs
 
 
 if __name__ == "__main__":
