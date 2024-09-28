@@ -23,6 +23,8 @@ def create_inference_features(
         with open(ENCODERS_PATH, "rb") as f:
             label_encoders = pickle.load(f)
 
+    # TODO: ensure normalization of numeric features for inference
+
     try:
         region_encoded = label_encoders["region"].transform([region])[0]
         tier_encoded = label_encoders["averageTier"].transform([tier])[0]

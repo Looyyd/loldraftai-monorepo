@@ -9,7 +9,13 @@ from sklearn.model_selection import train_test_split
 from sqlalchemy import distinct
 from tqdm import tqdm
 import numpy as np
-from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH, DATA_EXTRACTION_BATCH_SIZE
+from utils import (
+    TRAIN_DIR,
+    TEST_DIR,
+    ENCODERS_PATH,
+    DATA_EXTRACTION_BATCH_SIZE,
+    NUMERICAL_STATS_PATH,
+)
 from utils.database import Match, get_session
 from utils.column_definitions import (
     COLUMNS,
@@ -102,6 +108,11 @@ def extract_and_save_batches():
         pickle.dump(label_encoders, f)
     print(f"Saved label encoders to {ENCODERS_PATH}")
 
+    # Initialize variables for numerical feature normalization
+    numerical_sums = {col: 0.0 for col in NUMERICAL_COLUMNS}
+    numerical_sumsq = {col: 0.0 for col in NUMERICAL_COLUMNS}
+    total_count = 0
+
     # Process and save data batches
     batch_num = 0
     for matches in tqdm(batch_query(session), desc="Processing and saving batches"):
@@ -120,6 +131,15 @@ def extract_and_save_batches():
             df_train, df_test = train_test_split(
                 df, test_size=TEST_SIZE, random_state=42
             )
+
+            # Update numerical sums and sums of squares using training data
+            for col in NUMERICAL_COLUMNS:
+                col_values = df_train[col].values
+                numerical_sums[col] += col_values.sum()
+                numerical_sumsq[col] += (col_values**2).sum()
+
+            total_count += len(df_train)
+
             # Save to Parquet
             train_file = os.path.join(TRAIN_DIR, f"train_batch_{batch_num}.parquet")
             test_file = os.path.join(TEST_DIR, f"test_batch_{batch_num}.parquet")
@@ -128,6 +148,21 @@ def extract_and_save_batches():
             batch_num += 1
 
     session.close()
+
+    # Compute mean and std for numerical features
+    numerical_means = {}
+    numerical_stds = {}
+    for col in NUMERICAL_COLUMNS:
+        mean = numerical_sums[col] / total_count
+        variance = (numerical_sumsq[col] / total_count) - (mean**2)
+        std = np.sqrt(variance)
+        numerical_means[col] = mean
+        numerical_stds[col] = std
+
+    # Save numerical feature stats
+    with open(NUMERICAL_STATS_PATH, "wb") as f:
+        pickle.dump({"means": numerical_means, "stds": numerical_stds}, f)
+    print(f"Saved numerical feature stats to {NUMERICAL_STATS_PATH}")
 
 
 def extract_features(match: Match, label_encoders: dict):

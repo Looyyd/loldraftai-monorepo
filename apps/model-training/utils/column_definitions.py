@@ -34,16 +34,11 @@ def extract_average_division(match: Match):
 
 
 def extract_game_version_major_patch(match: Match):
-    # TODO: should always be set, maybe remove -1?
-    return (
-        match.gameVersionMajorPatch if match.gameVersionMajorPatch is not None else -1
-    )
+    return match.gameVersionMajorPatch
 
 
 def extract_game_version_minor_patch(match: Match):
-    return (
-        match.gameVersionMinorPatch if match.gameVersionMinorPatch is not None else -1
-    )
+    return match.gameVersionMinorPatch
 
 
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]

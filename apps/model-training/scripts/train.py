@@ -24,6 +24,7 @@ from utils import (
     ENCODERS_PATH,
     MODEL_PATH,
     TRAIN_BATCH_SIZE,
+    NUMERICAL_STATS_PATH,
 )
 from utils.column_definitions import (
     COLUMNS,
@@ -45,6 +46,11 @@ def set_random_seeds(seed=42):
 
 
 def collate_fn(batch):
+    with open(NUMERICAL_STATS_PATH, "rb") as f:
+        stats = pickle.load(f)
+    means = stats["means"]
+    stds = stats["stds"]
+
     collated = {}
     for col, col_def in COLUMNS.items():
         if col_def.column_type == ColumnType.LIST:
@@ -58,10 +64,14 @@ def collate_fn(batch):
                 [item[col] for item in batch], dtype=torch.long
             )  # Shape: [batch_size]
         elif col_def.column_type == ColumnType.NUMERICAL:
-            # Convert list of floats to a tensor
-            collated[col] = torch.tensor(
+            # Normalize numerical features
+            values = torch.tensor(
                 [item[col] for item in batch], dtype=torch.float
             )  # Shape: [batch_size]
+            mean = means[col]
+            std = stds[col] if stds[col] > 0 else 1.0  # Avoid division by zero
+            values = (values - mean) / std
+            collated[col] = values
     # Convert labels to a tensor
     labels = torch.tensor([item["label"] for item in batch], dtype=torch.float)
     return collated, labels

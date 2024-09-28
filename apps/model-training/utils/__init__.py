@@ -22,6 +22,8 @@ TRAIN_DIR = os.path.join(DATA_DIR, "train")
 TEST_DIR = os.path.join(DATA_DIR, "test")
 ENCODERS_PATH = os.path.join(DATA_DIR, "label_encoders.pkl")
 MODEL_PATH = os.path.join(DATA_DIR, "match_outcome_model.pth")
+NUMERICAL_STATS_PATH = os.path.join(DATA_DIR, "numerical_feature_stats.pkl")
+
 
 # Batch sizes
 TRAIN_BATCH_SIZE = 512  # Used during training
