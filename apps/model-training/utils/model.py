@@ -1,17 +1,16 @@
 # utils/model.py
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torchinfo import summary
 import pickle
 
+from utils import ENCODERS_PATH
 from utils.column_definitions import (
     COLUMNS,
     ColumnType,
     NUMERICAL_COLUMNS,
     CATEGORICAL_COLUMNS,
+    POSITIONS,
 )
-from utils import ENCODERS_PATH
 
 
 class MatchOutcomeModel(nn.Module):
@@ -20,49 +19,68 @@ class MatchOutcomeModel(nn.Module):
         num_categories,
         num_champions,
         num_numerical_features=0,
-        embed_dim=32,
+        embed_dim=64,
+        num_heads=4,
+        num_transformer_layers=2,
         dropout=0.1,
     ):
         super(MatchOutcomeModel, self).__init__()
-        # Embeddings
+        # Embeddings for categorical features
         self.embeddings = nn.ModuleDict()
-        total_embed_dim = 0
+        self.embed_dim = embed_dim
+        self.num_positions = len(POSITIONS) * 2  # Assuming two teams
+
         for col, col_def in COLUMNS.items():
             if col_def.column_type == ColumnType.CATEGORICAL:
                 self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
-                total_embed_dim += embed_dim
-            elif col_def.column_type == ColumnType.LIST:
-                if col == "champion_ids":
-                    self.embeddings[col] = nn.Embedding(num_champions, embed_dim)
-                    total_embed_dim += embed_dim * 10  # Assuming 10 champions per match
+
+        # Embedding for champions
+        self.champion_embedding = nn.Embedding(num_champions, embed_dim)
+        # Positional embedding for roles
+        self.position_embedding = nn.Embedding(self.num_positions, embed_dim)
+
+        # Transformer Encoder for champion embeddings
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_heads,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+        )
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_transformer_layers
+        )
 
         # Linear layer for numerical features
         self.num_numerical_features = num_numerical_features
         if num_numerical_features > 0:
-            self.numerical_layer = nn.Linear(num_numerical_features, embed_dim)
-            total_embed_dim += embed_dim
+            self.numerical_layer = nn.Sequential(
+                nn.Linear(num_numerical_features, embed_dim),
+                nn.BatchNorm1d(embed_dim),
+                nn.GELU(),
+            )
 
         # Fully connected layers
-        self.fc1 = nn.Linear(total_embed_dim, 128)
-        self.fc2 = nn.Linear(128, 1)
+        total_feature_dim = (
+            len(CATEGORICAL_COLUMNS) * embed_dim  # Categorical features
+            + embed_dim  # Processed champion features
+            + (embed_dim if num_numerical_features > 0 else 0)  # Numerical features
+        )
 
-        self.dropout = nn.Dropout(dropout)
+        self.fc = nn.Sequential(
+            nn.Linear(total_feature_dim, 128),
+            nn.BatchNorm1d(128),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, 1),
+        )
 
     def forward(self, features):
         embedded_features = []
-        for col, embedding_layer in self.embeddings.items():
-            if COLUMNS[col].column_type == ColumnType.LIST:
-                # For list columns, embed each element and flatten
-                embedded = embedding_layer(
-                    features[col]
-                )  # Shape: [batch_size, seq_length, embed_dim]
-                embedded = embedded.view(
-                    features[col].size(0), -1
-                )  # Flatten to [batch_size, seq_length * embed_dim]
-            else:
-                embedded = embedding_layer(
-                    features[col]
-                )  # Shape: [batch_size, embed_dim]
+
+        # Process categorical features
+        for col in CATEGORICAL_COLUMNS:
+            embedded = self.embeddings[col](features[col])  # [batch_size, embed_dim]
             embedded_features.append(embedded)
 
         # Process numerical features
@@ -73,11 +91,45 @@ class MatchOutcomeModel(nn.Module):
             numerical_embedding = self.numerical_layer(numerical_features)
             embedded_features.append(numerical_embedding)
 
+        # Process champion embeddings with positional embeddings
+        # Assume features['champion_ids'] has shape [batch_size, num_champions]
+        batch_size = features["champion_ids"].size(0)
+        champion_embeds = self.champion_embedding(
+            features["champion_ids"]
+        )  # [batch_size, num_champions, embed_dim]
+
+        # Create position indices tensor
+        position_indices = torch.arange(
+            self.num_positions, device=features["champion_ids"].device
+        )
+        position_indices = position_indices.unsqueeze(0).expand(
+            batch_size, -1
+        )  # [batch_size, num_champions]
+        position_embeds = self.position_embedding(
+            position_indices
+        )  # [batch_size, num_champions, embed_dim]
+
+        # Sum champion and position embeddings
+        champion_inputs = (
+            champion_embeds + position_embeds
+        )  # [batch_size, num_champions, embed_dim]
+
+        # Pass through transformer encoder
+        transformer_output = self.transformer_encoder(
+            champion_inputs
+        )  # [batch_size, num_champions, embed_dim]
+
+        # Pooling: We can use mean pooling over the sequence dimension
+        champion_features = transformer_output.mean(dim=1)  # [batch_size, embed_dim]
+
+        embedded_features.append(champion_features)
+
+        # Concatenate all features
         x = torch.cat(embedded_features, dim=1)
 
         # Pass through fully connected layers
-        x = self.dropout(F.relu(self.fc1(x)))
-        x = torch.sigmoid(self.fc2(x)).squeeze(1)
+        x = self.fc(x)
+        x = torch.sigmoid(x).squeeze(1)
 
         return x
 
@@ -97,7 +149,7 @@ if __name__ == "__main__":
         num_champions=num_champions,
         num_numerical_features=len(NUMERICAL_COLUMNS),
         embed_dim=32,
-        dropout=0.1,
+        dropout=0,
     )
     # Print model architecture
     print(model)
