@@ -6,6 +6,8 @@ import glob
 import torch
 import torch.optim as optim
 import torch.nn as nn
+from torch.nn.utils import clip_grad_norm_
+
 import wandb
 from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -131,6 +133,8 @@ def train_model(run_name: str):
     # Loss and optimizer
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    # Add gradient clipping max norm
+    max_grad_norm = 1.0
 
     # Training loop
     num_epochs = 10
@@ -147,6 +151,7 @@ def train_model(run_name: str):
             outputs = model(features)
             loss = criterion(outputs, labels)
             loss.backward()
+            grad_norm = clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
             epoch_loss += loss.item()
@@ -161,6 +166,7 @@ def train_model(run_name: str):
                         "train_loss": loss.item(),
                         "epoch": epoch + 1,
                         "batch": batch_idx + 1,
+                        "grad_norm": grad_norm,
                     }
                 )
 
