@@ -11,17 +11,18 @@ from utils import PARQUET_READER_BATCH_SIZE
 
 
 class MatchDataset(IterableDataset):
-    def __init__(self, data_dir: str, transform=None):
-        """
-        Args:
-            data_dir (str): Directory containing the Parquet files.
-            transform (callable, optional): Optional transform to be applied on a sample.
-        """
+    def __init__(
+        self,
+        data_dir: str,
+        transform=None,
+        mask_champions=0.0,
+        unknown_champion_id=None,
+    ):
         self.data_files = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))
-
         self.transform = transform
         self.total_samples = self._count_total_samples()
-
+        self.mask_champions = mask_champions
+        self.unknown_champion_id = unknown_champion_id
         # Shuffle the data files
         random.seed(42)  # For reproducibility
         random.shuffle(self.data_files)
@@ -73,7 +74,20 @@ class MatchDataset(IterableDataset):
                 # Store as float
                 sample[col] = float(row[col])
             elif col_def.column_type == ColumnType.LIST:
-                # Keep tensors for list columns
+                if col == "champion_ids":
+                    champion_ids = [int(ch_id) for ch_id in row[col]]
+                # Apply masking
+                if self.mask_champions > 0 and self.unknown_champion_id is not None:
+                    champion_ids = [
+                        (
+                            ch_id
+                            if random.random() > self.mask_champions
+                            else self.unknown_champion_id
+                        )
+                        for ch_id in champion_ids
+                    ]
+                sample[col] = torch.tensor(champion_ids, dtype=torch.long)
+            else:
                 sample[col] = torch.tensor(row[col], dtype=torch.long)
         # Ensure label is a float
         sample["label"] = float(row["label"])

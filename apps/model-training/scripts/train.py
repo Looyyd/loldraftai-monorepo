@@ -35,6 +35,8 @@ from utils.column_definitions import (
 
 DATALOADER_WORKERS = 4
 
+MASK_CHAMPIONS = 0.1
+
 
 def set_random_seeds(seed=42):
     torch.manual_seed(seed)
@@ -78,7 +80,6 @@ def collate_fn(batch):
 
 
 def get_max_champion_id():
-    # Function to get the maximum champion ID from the data
     max_id = 0
     for dir_path in [TRAIN_DIR, TEST_DIR]:
         data_files = glob.glob(os.path.join(dir_path, "*.parquet"))
@@ -89,16 +90,29 @@ def get_max_champion_id():
                 max_id_in_chunk = df_chunk["champion_ids"].apply(max).max()
                 if max_id_in_chunk > max_id:
                     max_id = max_id_in_chunk
-    return max_id + 1  # +1 for padding if needed
+    return max_id
 
 
 def train_model(run_name: str):
     # Initialize wandb
     wandb.init(project="draftking", name=run_name)
 
-    # Initialize the datasets
-    train_dataset = MatchDataset(data_dir=TRAIN_DIR)
-    test_dataset = MatchDataset(data_dir=TEST_DIR)
+    # Determine the maximum champion ID
+    max_champion_id = get_max_champion_id()
+    unknown_champion_id = max_champion_id + 1
+    num_champions = unknown_champion_id + 1  # Total number of embeddings
+
+    # Initialize the datasets with masking parameters
+    train_dataset = MatchDataset(
+        data_dir=TRAIN_DIR,
+        mask_champions=MASK_CHAMPIONS,
+        unknown_champion_id=unknown_champion_id,
+    )
+    test_dataset = MatchDataset(
+        data_dir=TEST_DIR,
+        mask_champions=MASK_CHAMPIONS,
+        unknown_champion_id=unknown_champion_id,
+    )
 
     # Initialize the DataLoaders
     train_loader = DataLoader(
@@ -114,9 +128,6 @@ def train_model(run_name: str):
         collate_fn=collate_fn,
     )
 
-    # Determine the maximum champion ID
-    max_champion_id = get_max_champion_id()
-
     # Determine the number of unique categories from label encoders
     with open(ENCODERS_PATH, "rb") as f:
         label_encoders = pickle.load(f)
@@ -128,7 +139,7 @@ def train_model(run_name: str):
     # Initialize the model
     model = MatchOutcomeModel(
         num_categories=num_categories,
-        num_champions=max_champion_id,
+        num_champions=num_champions,
         num_numerical_features=len(NUMERICAL_COLUMNS),
         embed_dim=32,
         dropout=0.1,
