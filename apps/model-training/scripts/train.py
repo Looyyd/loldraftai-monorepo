@@ -1,4 +1,4 @@
-# train.py
+# scripts/train.py
 import os
 import pickle
 import glob
@@ -13,8 +13,17 @@ import pyarrow.parquet as pq
 
 from utils.match_dataset import MatchDataset
 from utils.model import MatchOutcomeTransformer
-from utils import get_best_device, TRAIN_DIR, TEST_DIR, ENCODERS_PATH, MODEL_PATH
+from utils import (
+    get_best_device,
+    TRAIN_DIR,
+    TEST_DIR,
+    ENCODERS_PATH,
+    MODEL_PATH,
+    TRAIN_BATCH_SIZE,
+)
 from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS, ColumnType
+
+DATALOADER_WORKERS = 4
 
 
 def set_random_seeds(seed=42):
@@ -75,12 +84,15 @@ def train_model():
     # Initialize the DataLoaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=64,
-        num_workers=4,  # Adjust based on your CPU
+        batch_size=TRAIN_BATCH_SIZE,
+        num_workers=DATALOADER_WORKERS,
         collate_fn=collate_fn,
     )
     test_loader = DataLoader(
-        test_dataset, batch_size=64, num_workers=4, collate_fn=collate_fn
+        test_dataset,
+        batch_size=TRAIN_BATCH_SIZE,
+        num_workers=DATALOADER_WORKERS,
+        collate_fn=collate_fn,
     )
 
     # Determine the maximum champion ID

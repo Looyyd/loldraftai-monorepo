@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import IterableDataset
 import pyarrow.parquet as pq
 from utils.column_definitions import COLUMNS, ColumnType
+from utils import PARQUET_READER_BATCH_SIZE
 
 
 class MatchDataset(IterableDataset):
@@ -44,7 +45,7 @@ class MatchDataset(IterableDataset):
         for file_path in self.data_files[iter_start:iter_end]:
             # Read the Parquet file in batches using PyArrow
             parquet_file = pq.ParquetFile(file_path)
-            for batch in parquet_file.iter_batches(batch_size=1000):
+            for batch in parquet_file.iter_batches(batch_size=PARQUET_READER_BATCH_SIZE):
                 df_chunk = batch.to_pandas()
                 for _, row in df_chunk.iterrows():
                     sample = self._get_sample(row)

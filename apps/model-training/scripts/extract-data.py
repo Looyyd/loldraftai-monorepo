@@ -1,4 +1,4 @@
-# extract-data.py
+# scripts/extract-data.py
 import os
 import pickle
 import enum
@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sqlalchemy import distinct
 from tqdm import tqdm
 
-from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH
+from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH, DATA_EXTRACTION_BATCH_SIZE
 from utils.database import Match, get_session
 from utils.column_definitions import (
     COLUMNS,
@@ -23,14 +23,13 @@ from utils.column_definitions import (
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 
 TEST_SIZE = 0.2  # 20% for testing
-BATCH_SIZE = 10000  # Number of records per batch
 
 # Ensure data directories exist
 os.makedirs(TRAIN_DIR, exist_ok=True)
 os.makedirs(TEST_DIR, exist_ok=True)
 
 
-def batch_query(session, batch_size=BATCH_SIZE):
+def batch_query(session, batch_size=DATA_EXTRACTION_BATCH_SIZE):
     """
     Generator that yields batches of matches from the database.
     """
