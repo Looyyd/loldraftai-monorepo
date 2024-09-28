@@ -10,6 +10,8 @@ import wandb
 from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score, roc_auc_score
 import pyarrow.parquet as pq
+import argparse
+
 
 from utils.match_dataset import MatchDataset
 from utils.model import MatchOutcomeTransformer
@@ -73,9 +75,9 @@ def get_max_champion_id():
     return max_id + 1  # +1 for padding if needed
 
 
-def train_model():
+def train_model(run_name: str):
     # Initialize wandb
-    wandb.init(project="draftking", name="initial-setup")
+    wandb.init(project="draftking", name=run_name)
 
     # Initialize the datasets
     train_dataset = MatchDataset(data_dir=TRAIN_DIR)
@@ -188,6 +190,19 @@ def train_model():
 
 
 if __name__ == "__main__":
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        description="Train the MatchOutcomeTransformer model"
+    )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        required=False,
+        default="initial-setup",
+        help="Name for the Wandb run",
+    )
+    args = parser.parse_args()
+
     # Set random seeds for reproducibility
     set_random_seeds()
-    train_model()
+    train_model(args.run_name)
