@@ -1,7 +1,6 @@
 # utils/match_dataset.py
 import os
 import glob
-import pickle
 import torch
 from torch.utils.data import IterableDataset
 import pyarrow.parquet as pq
@@ -9,11 +8,10 @@ from utils.column_definitions import COLUMNS, ColumnType
 
 
 class MatchDataset(IterableDataset):
-    def __init__(self, data_dir: str, label_encoders_path: str, transform=None):
+    def __init__(self, data_dir: str, transform=None):
         """
         Args:
             data_dir (str): Directory containing the Parquet files.
-            label_encoders_path (str): Path to the saved label encoders.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
         self.data_files = sorted(glob.glob(os.path.join(data_dir, "*.parquet")))

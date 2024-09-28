@@ -69,8 +69,8 @@ def train_model():
     wandb.init(project="draftking", name="initial-setup")
 
     # Initialize the datasets
-    train_dataset = MatchDataset(data_dir=TRAIN_DIR, label_encoders_path=ENCODERS_PATH)
-    test_dataset = MatchDataset(data_dir=TEST_DIR, label_encoders_path=ENCODERS_PATH)
+    train_dataset = MatchDataset(data_dir=TRAIN_DIR)
+    test_dataset = MatchDataset(data_dir=TEST_DIR)
 
     # Initialize the DataLoaders
     train_loader = DataLoader(
