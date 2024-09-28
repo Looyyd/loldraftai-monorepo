@@ -33,6 +33,19 @@ def extract_average_division(match: Match):
     return match.averageDivision.value
 
 
+def extract_game_version_major_patch(match: Match):
+    # TODO: should always be set, maybe remove -1?
+    return (
+        match.gameVersionMajorPatch if match.gameVersionMajorPatch is not None else -1
+    )
+
+
+def extract_game_version_minor_patch(match: Match):
+    return (
+        match.gameVersionMinorPatch if match.gameVersionMinorPatch is not None else -1
+    )
+
+
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 
 
@@ -52,6 +65,12 @@ COLUMNS: Dict[str, ColumnDefinition] = {
         ColumnType.CATEGORICAL, extract_average_division
     ),
     "champion_ids": ColumnDefinition(ColumnType.LIST, extract_champion_ids),
+    "gameVersionMajorPatch": ColumnDefinition(
+        ColumnType.NUMERICAL, extract_game_version_major_patch
+    ),
+    "gameVersionMinorPatch": ColumnDefinition(
+        ColumnType.NUMERICAL, extract_game_version_minor_patch
+    ),
 }
 
 CATEGORICAL_COLUMNS = [

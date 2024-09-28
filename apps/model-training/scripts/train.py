@@ -14,7 +14,7 @@ import argparse
 
 
 from utils.match_dataset import MatchDataset
-from utils.model import MatchOutcomeTransformer
+from utils.model import MatchOutcomeModel
 from utils import (
     get_best_device,
     TRAIN_DIR,
@@ -23,7 +23,12 @@ from utils import (
     MODEL_PATH,
     TRAIN_BATCH_SIZE,
 )
-from utils.column_definitions import COLUMNS, CATEGORICAL_COLUMNS, ColumnType
+from utils.column_definitions import (
+    COLUMNS,
+    CATEGORICAL_COLUMNS,
+    NUMERICAL_COLUMNS,
+    ColumnType,
+)
 
 DATALOADER_WORKERS = 4
 
@@ -109,12 +114,11 @@ def train_model(run_name: str):
     }
 
     # Initialize the model
-    model = MatchOutcomeTransformer(
+    model = MatchOutcomeModel(
         num_categories=num_categories,
         num_champions=max_champion_id,
+        num_numerical_features=len(NUMERICAL_COLUMNS),
         embed_dim=32,
-        num_heads=4,
-        num_layers=2,
         dropout=0.1,
     )
 

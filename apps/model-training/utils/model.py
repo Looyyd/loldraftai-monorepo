@@ -3,20 +3,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.column_definitions import COLUMNS, ColumnType
+from utils.column_definitions import COLUMNS, ColumnType, NUMERICAL_COLUMNS
 
 
-class MatchOutcomeTransformer(nn.Module):
+class MatchOutcomeModel(nn.Module):
     def __init__(
         self,
         num_categories,
         num_champions,
+        num_numerical_features=0,
         embed_dim=32,
-        num_heads=4,
-        num_layers=2,
         dropout=0.1,
     ):
-        super(MatchOutcomeTransformer, self).__init__()
+        super(MatchOutcomeModel, self).__init__()
         # Embeddings
         self.embeddings = nn.ModuleDict()
         total_embed_dim = 0
@@ -29,13 +28,11 @@ class MatchOutcomeTransformer(nn.Module):
                     self.embeddings[col] = nn.Embedding(num_champions, embed_dim)
                     total_embed_dim += embed_dim * 10  # Assuming 10 champions per match
 
-        # Transformer Encoder
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim, nhead=num_heads, dropout=dropout
-        )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers
-        )
+        # Linear layer for numerical features
+        self.num_numerical_features = num_numerical_features
+        if num_numerical_features > 0:
+            self.numerical_layer = nn.Linear(num_numerical_features, embed_dim)
+            total_embed_dim += embed_dim
 
         # Fully connected layers
         self.fc1 = nn.Linear(total_embed_dim, 128)
@@ -60,6 +57,14 @@ class MatchOutcomeTransformer(nn.Module):
                 )  # Shape: [batch_size, embed_dim]
             embedded_features.append(embedded)
 
+        # Process numerical features
+        if self.num_numerical_features > 0:
+            numerical_features = torch.stack(
+                [features[col] for col in NUMERICAL_COLUMNS], dim=1
+            )
+            numerical_embedding = self.numerical_layer(numerical_features)
+            embedded_features.append(numerical_embedding)
+
         x = torch.cat(embedded_features, dim=1)
 
         # Pass through fully connected layers
@@ -76,7 +81,7 @@ if __name__ == "__main__":
     }
     num_champions = 200
 
-    model = MatchOutcomeTransformer(
+    model = MatchOutcomeModel(
         num_categories=num_categories,
         num_champions=num_champions,
         embed_dim=32,

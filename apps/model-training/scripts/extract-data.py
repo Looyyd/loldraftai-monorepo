@@ -2,18 +2,19 @@
 import os
 import pickle
 import enum
-
+import shutil
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sqlalchemy import distinct
 from tqdm import tqdm
-
+import numpy as np
 from utils import TRAIN_DIR, TEST_DIR, ENCODERS_PATH, DATA_EXTRACTION_BATCH_SIZE
 from utils.database import Match, get_session
 from utils.column_definitions import (
     COLUMNS,
     CATEGORICAL_COLUMNS,
+    NUMERICAL_COLUMNS,
     extract_raw_features,
     ColumnType,
 )
@@ -87,6 +88,12 @@ def extract_and_save_batches():
     """
     session = get_session()
 
+    # Clean up previous data
+    shutil.rmtree(TRAIN_DIR, ignore_errors=True)
+    shutil.rmtree(TEST_DIR, ignore_errors=True)
+    os.makedirs(TRAIN_DIR, exist_ok=True)
+    os.makedirs(TEST_DIR, exist_ok=True)
+
     # Create and fit label encoders
     label_encoders = create_label_encoders(session)
 
@@ -130,6 +137,10 @@ def extract_features(match: Match, label_encoders: dict):
     for col, def_ in COLUMNS.items():
         if def_.column_type == ColumnType.CATEGORICAL:
             features[col] = label_encoders[col].transform([features[col]])[0]
+
+    for col in NUMERICAL_COLUMNS:
+        if features[col] == -1:
+            return None  # Skip samples with missing numerical data
 
     # Add the label
     features["label"] = 1 if match.teams.get("100", {}).get("win", False) else 0
