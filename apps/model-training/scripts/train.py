@@ -137,6 +137,7 @@ def train_model(run_name: str):
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
+        epoch_steps = 0
         for batch_idx, (features, labels) in enumerate(train_loader):
             # Move all features to the device
             features = {k: v.to(device) for k, v in features.items()}
@@ -148,7 +149,8 @@ def train_model(run_name: str):
             loss.backward()
             optimizer.step()
 
-            epoch_loss += loss.item() * labels.size(0)
+            epoch_loss += loss.item()
+            epoch_steps += 1
 
             if (batch_idx + 1) % 100 == 0:
                 print(
@@ -162,7 +164,7 @@ def train_model(run_name: str):
                     }
                 )
 
-        avg_loss = epoch_loss / len(train_loader)
+        avg_loss = epoch_loss / epoch_steps
         print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
@@ -170,6 +172,8 @@ def train_model(run_name: str):
         model.eval()
         all_preds = []
         all_labels = []
+        epoch_steps = 0
+        epoch_loss = 0.0
         with torch.no_grad():
             for features, labels in test_loader:
                 # Move all features to the device
@@ -179,13 +183,26 @@ def train_model(run_name: str):
                 outputs = model(features)
                 all_preds.extend(outputs.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
+                loss = criterion(outputs, labels)
+                epoch_loss += loss.item()
+                epoch_steps += 1
+
+        avg_loss = epoch_loss / epoch_steps
+        print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
 
         # Calculate metrics
         binary_preds = [1 if p >= 0.5 else 0 for p in all_preds]
         accuracy = accuracy_score(all_labels, binary_preds)
         auc = roc_auc_score(all_labels, all_preds)
         print(f"Validation Accuracy: {accuracy:.4f}, AUC: {auc:.4f}")
-        wandb.log({"epoch": epoch + 1, "val_accuracy": accuracy, "val_auc": auc})
+        wandb.log(
+            {
+                "epoch": epoch + 1,
+                "val_accuracy": accuracy,
+                "val_auc": auc,
+                "avg_val_loss": avg_loss,
+            }
+        )
 
     wandb.finish()
     # Save the model
