@@ -113,6 +113,9 @@ def extract_and_save_batches():
                 data.append(features)
         if data:
             df = pd.DataFrame(data)
+            # Shuffle the data before splitting
+            df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
             # Split into train/test
             df_train, df_test = train_test_split(
                 df, test_size=TEST_SIZE, random_state=42

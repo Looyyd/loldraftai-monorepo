@@ -25,5 +25,5 @@ MODEL_PATH = os.path.join(DATA_DIR, "match_outcome_model.pth")
 
 # Batch sizes
 TRAIN_BATCH_SIZE = 512  # Used during training
-DATA_EXTRACTION_BATCH_SIZE = 10000  # Used during data extraction from the database
-PARQUET_READER_BATCH_SIZE = 10000  # Used when reading data from Parquet files
+DATA_EXTRACTION_BATCH_SIZE = 512 * 4  # Used during data extraction from the database
+PARQUET_READER_BATCH_SIZE = 512 * 4  # Used when reading data from Parquet files

@@ -133,7 +133,7 @@ def train_model(run_name: str):
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     # Training loop
-    num_epochs = 5
+    num_epochs = 10
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
@@ -152,7 +152,7 @@ def train_model(run_name: str):
             epoch_loss += loss.item()
             epoch_steps += 1
 
-            if (batch_idx + 1) % 100 == 0:
+            if (batch_idx + 1) % 20 == 0:
                 print(
                     f"Epoch [{epoch+1}/{num_epochs}], Step [{batch_idx+1}], Loss: {loss.item():.4f}"
                 )

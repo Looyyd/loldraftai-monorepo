@@ -2,8 +2,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchinfo import summary
+import pickle
 
-from utils.column_definitions import COLUMNS, ColumnType, NUMERICAL_COLUMNS
+from utils.column_definitions import (
+    COLUMNS,
+    ColumnType,
+    NUMERICAL_COLUMNS,
+    CATEGORICAL_COLUMNS,
+)
+from utils import ENCODERS_PATH
 
 
 class MatchOutcomeModel(nn.Module):
@@ -76,17 +84,45 @@ class MatchOutcomeModel(nn.Module):
 
 if __name__ == "__main__":
     # Example usage
+    # Determine the number of unique categories from label encoders
+    with open(ENCODERS_PATH, "rb") as f:
+        label_encoders = pickle.load(f)
     num_categories = {
-        col: 10 for col in COLUMNS if COLUMNS[col] == ColumnType.CATEGORICAL
+        col: len(label_encoders[col].classes_) for col in CATEGORICAL_COLUMNS
     }
     num_champions = 200
 
     model = MatchOutcomeModel(
         num_categories=num_categories,
         num_champions=num_champions,
+        num_numerical_features=len(NUMERICAL_COLUMNS),
         embed_dim=32,
-        num_heads=4,
-        num_layers=2,
         dropout=0.1,
     )
+    # Print model architecture
     print(model)
+
+    # Calculate and print model size
+    param_size = 0
+    for param in model.parameters():
+        param_size += param.nelement() * param.element_size()
+    buffer_size = 0
+    for buffer in model.buffers():
+        buffer_size += buffer.nelement() * buffer.element_size()
+
+    size_all_mb = (param_size + buffer_size) / 1024**2
+    print(f"\nModel Size: {size_all_mb:.3f} MB")
+
+    # Print sizes of individual layers
+    print("\nLayer Sizes:")
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.Embedding, nn.Linear)):
+            layer_size = (
+                sum(p.nelement() * p.element_size() for p in module.parameters())
+                / 1024**2
+            )
+            print(f"{name}: {layer_size:.3f} MB")
+
+    # Count trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\nTrainable parameters: {trainable_params:,}")
