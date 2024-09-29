@@ -48,7 +48,7 @@ MASK_CHAMPIONS = 0.1
 # should use TensorFloat-32, which is faster that "highest" precision
 torch.set_float32_matmul_precision("high")
 
-LOG_WANDB = False
+LOG_WANDB = True
 
 
 def set_random_seeds(seed=42):
@@ -192,11 +192,12 @@ def train_model(run_name: str):
         elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
             criterion[task_name] = nn.CrossEntropyLoss()
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    # TODO: could not weight decay bias and normlisaiton layers
+    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
     max_grad_norm = 1.0
 
     # Training loop
-    num_epochs = 1
+    num_epochs = 10
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
 
@@ -242,9 +243,10 @@ def train_model(run_name: str):
                 wandb.log(log_data)
 
             avg_loss = epoch_loss / epoch_steps
-            print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
-            if LOG_WANDB:
-                wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
+
+        print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+        if LOG_WANDB:
+            wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
         # Evaluation
         model.eval()
@@ -252,16 +254,25 @@ def train_model(run_name: str):
             task_name: torch.zeros(2).to(device) for task_name in TASKS.keys()
         }
         num_samples = 0
+        total_loss = 0.0
+        total_steps = 0
         with torch.no_grad():
             for features, labels in test_loader:
+                total_steps += 1
                 # Move all features to the device
                 features = {
                     k: v.to(device, non_blocking=True) for k, v in features.items()
                 }
                 labels = {k: v.to(device, non_blocking=True) for k, v in labels.items()}
 
-                # TODO: avg_validation_loss
                 outputs = model(features)
+                for task_name, task_def in TASKS.items():
+                    task_output = outputs[task_name]
+                    task_label = labels[task_name]
+                    task_loss = criterion[task_name](task_output, task_label)
+                    weighted_loss = task_def.weight * task_loss
+                    total_loss += weighted_loss
+
                 batch_size = next(iter(labels.values())).size(0)
                 num_samples += batch_size
 
@@ -280,6 +291,11 @@ def train_model(run_name: str):
                         )
                         metric_accumulators[task_name][0] += mse
                         metric_accumulators[task_name][1] += batch_size
+
+        avg_loss = total_loss / total_steps
+        print(f"Average validation loss: {avg_loss:.4f}")
+        if LOG_WANDB:
+            wandb.log({"avg_val_loss": avg_loss})
 
         # Calculate final metrics
         metrics = {}
