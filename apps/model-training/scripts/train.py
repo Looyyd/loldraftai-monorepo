@@ -35,7 +35,7 @@ from utils.column_definitions import (
 )
 from utils.task_definitions import TASKS, TaskType
 
-DATALOADER_WORKERS = 1 # Fastest with 1 or 2 might be because of mps performance cores
+DATALOADER_WORKERS = 1  # Fastest with 1 or 2 might be because of mps performance cores
 
 MASK_CHAMPIONS = 0.1
 
@@ -188,8 +188,8 @@ def train_model(run_name: str):
             criterion[task_name] = nn.MSELoss()
         elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
             criterion[task_name] = nn.CrossEntropyLoss()
+
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    # Add gradient clipping max norm
     max_grad_norm = 1.0
 
     # Training loop
@@ -239,13 +239,16 @@ def train_model(run_name: str):
                 wandb.log(log_data)
 
             avg_loss = epoch_loss / epoch_steps
-            print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+            # print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
             if LOG_WANDB:
                 wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
         # Evaluation
         model.eval()
-        metrics = {task_name: [] for task_name in TASKS.keys()}
+        metric_accumulators = {
+            task_name: torch.zeros(2).to(device) for task_name in TASKS.keys()
+        }
+        num_samples = 0
         with torch.no_grad():
             for features, labels in test_loader:
                 # Move all features to the device
@@ -254,29 +257,42 @@ def train_model(run_name: str):
 
                 # TODO: avg_validation_loss
                 outputs = model(features)
+                batch_size = next(iter(labels.values())).size(0)
+                num_samples += batch_size
+
                 for task_name, task_def in TASKS.items():
                     task_output = outputs[task_name]
                     task_label = labels[task_name]
 
                     if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
                         preds = (task_output >= 0.5).float()
-                        accuracy = (preds == task_label).float().mean().item()
-                        metrics[task_name].append(accuracy)
+                        correct = (preds == task_label).float().sum()
+                        metric_accumulators[task_name][0] += correct
+                        metric_accumulators[task_name][1] += batch_size
                     elif task_def.task_type == TaskType.REGRESSION:
-                        mse = nn.functional.mse_loss(task_output, task_label).item()
-                        metrics[task_name].append(mse)
+                        mse = nn.functional.mse_loss(
+                            task_output, task_label, reduction="sum"
+                        )
+                        metric_accumulators[task_name][0] += mse
+                        metric_accumulators[task_name][1] += batch_size
+
+        # Calculate final metrics
+        metrics = {}
+        for task_name, accumulator in metric_accumulators.items():
+            if TASKS[task_name].task_type == TaskType.BINARY_CLASSIFICATION:
+                metrics[task_name] = (accumulator[0] / accumulator[1]).item()
+            elif TASKS[task_name].task_type == TaskType.REGRESSION:
+                metrics[task_name] = (accumulator[0] / accumulator[1]).item()
+        # Log evaluation metrics
+        for task_name, metric_value in metrics.items():
+            if LOG_WANDB:
+                wandb.log({f"val_{task_name}_metric": metric_value})
 
         epoch_end_time = time.time()
         epoch_time = epoch_end_time - epoch_start_time
         print(f"Epoch time: {epoch_time}")
         if LOG_WANDB:
             wandb.log({"epoch_time": epoch_time})
-
-        # Log evaluation metrics
-        for task_name, values in metrics.items():
-            avg_metric = sum(values) / len(values)
-            if LOG_WANDB:
-                wandb.log({f"val_{task_name}_metric": avg_metric})
 
     if LOG_WANDB:
         wandb.finish()
