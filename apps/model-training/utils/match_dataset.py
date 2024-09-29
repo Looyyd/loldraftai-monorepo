@@ -11,7 +11,6 @@ from utils import PARQUET_READER_BATCH_SIZE
 from utils.task_definitions import TASKS, TaskType
 
 
-
 class MatchDataset(IterableDataset):
     def __init__(
         self,
@@ -104,7 +103,10 @@ class MatchDataset(IterableDataset):
                 # Normalize the regression target
                 mean = self.task_stats["means"][task_name]
                 std = self.task_stats["stds"][task_name]
-                normalized_label = (float(task_label) - mean) / std
+                if std != 0:
+                    normalized_label = (float(task_label) - mean) / std
+                else:
+                    normalized_label = float(task_label) - mean
                 sample[task_name] = normalized_label
 
             elif TASKS[task_name].task_type == TaskType.MULTICLASS_CLASSIFICATION:

@@ -183,7 +183,7 @@ def train_model(run_name: str):
     max_grad_norm = 1.0
 
     # Training loop
-    num_epochs = 15
+    num_epochs = 25
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
@@ -236,6 +236,7 @@ def train_model(run_name: str):
                 features = {k: v.to(device) for k, v in features.items()}
                 labels = {k: v.to(device) for k, v in labels.items()}
 
+                # TODO: avg_validation_loss
                 outputs = model(features)
                 for task_name, task_def in TASKS.items():
                     task_output = outputs[task_name]
