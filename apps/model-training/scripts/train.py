@@ -41,6 +41,7 @@ from utils.column_definitions import (
 from utils.task_definitions import TASKS, TaskType
 
 DATALOADER_WORKERS = 1  # Fastest with 1 or 2 might be because of mps performance cores
+PREFETCH_FACTOR = 1
 
 MASK_CHAMPIONS = 0.1
 
@@ -150,14 +151,14 @@ def train_model(run_name: str):
         batch_size=TRAIN_BATCH_SIZE,
         num_workers=DATALOADER_WORKERS,
         collate_fn=collate_fn,
-        prefetch_factor=1,  # Prefetch next batch while current batch is being processed
+        prefetch_factor=PREFETCH_FACTOR,  # Prefetch next batch while current batch is being processed
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=TRAIN_BATCH_SIZE,
         num_workers=DATALOADER_WORKERS,
         collate_fn=collate_fn,
-        prefetch_factor=1,  # Prefetch next batch while current batch is being processed
+        prefetch_factor=PREFETCH_FACTOR,  # Prefetch next batch while current batch is being processed
     )
 
     # Determine the number of unique categories from label encoders
@@ -342,8 +343,6 @@ if __name__ == "__main__":
         s = io.StringIO()
         sortby = SortKey.CUMULATIVE
         ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
-        ps.print_stats()
-        print(s.getvalue())
 
         # Optionally, save profiling results to a file
         ps.dump_stats(DATA_DIR + "train_profile.prof")
