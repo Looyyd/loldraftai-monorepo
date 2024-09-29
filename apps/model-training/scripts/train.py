@@ -2,6 +2,7 @@
 import os
 import pickle
 import glob
+import time
 
 import torch
 import torch.optim as optim
@@ -34,9 +35,14 @@ from utils.column_definitions import (
 )
 from utils.task_definitions import TASKS, TaskType
 
-DATALOADER_WORKERS = 4
+DATALOADER_WORKERS = 1 # Fastest with 1 or 2 might be because of mps performance cores
 
 MASK_CHAMPIONS = 0.1
+
+# should use TensorFloat-32, which is faster that "highest" precision
+torch.set_float32_matmul_precision("high")
+
+LOG_WANDB = False
 
 
 def set_random_seeds(seed=42):
@@ -108,7 +114,8 @@ def get_max_champion_id():
 
 def train_model(run_name: str):
     # Initialize wandb
-    wandb.init(project="draftking", name=run_name)
+    if LOG_WANDB:
+        wandb.init(project="draftking", name=run_name)
 
     # Determine the maximum champion ID
     max_champion_id = get_max_champion_id()
@@ -166,8 +173,11 @@ def train_model(run_name: str):
     device = get_best_device()
     model.to(device)
     print(f"Using device: {device}")
+    if device != torch.device("mps"):
+        model = torch.compile(model)
 
-    wandb.watch(model, log_freq=100)
+    if LOG_WANDB:
+        wandb.watch(model, log_freq=100)
 
     # Initialize loss functions for each task
     criterion = {}
@@ -183,17 +193,22 @@ def train_model(run_name: str):
     max_grad_norm = 1.0
 
     # Training loop
-    num_epochs = 25
+    num_epochs = 1
     for epoch in range(num_epochs):
+        epoch_start_time = time.time()
+
         model.train()
         epoch_loss = 0.0
         epoch_steps = 0
         for batch_idx, (features, labels) in enumerate(train_loader):
+
             # Move all features to the device
             features = {k: v.to(device) for k, v in features.items()}
             labels = {k: v.to(device) for k, v in labels.items()}
 
             optimizer.zero_grad()
+            # only works with CUDA
+            # with torch.autocast(device_type=str(device), dtype=torch.bfloat16):
             outputs = model(features)
 
             total_loss = 0.0
@@ -214,7 +229,7 @@ def train_model(run_name: str):
             epoch_steps += 1
 
             # Logging
-            if (batch_idx + 1) % 20 == 0:
+            if (batch_idx + 1) % 20 == 0 and LOG_WANDB:
                 log_data = {
                     "epoch": epoch + 1,
                     "batch": batch_idx + 1,
@@ -225,7 +240,8 @@ def train_model(run_name: str):
 
             avg_loss = epoch_loss / epoch_steps
             print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
-            wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
+            if LOG_WANDB:
+                wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
         # Evaluation
         model.eval()
@@ -250,12 +266,20 @@ def train_model(run_name: str):
                         mse = nn.functional.mse_loss(task_output, task_label).item()
                         metrics[task_name].append(mse)
 
+        epoch_end_time = time.time()
+        epoch_time = epoch_end_time - epoch_start_time
+        print(f"Epoch time: {epoch_time}")
+        if LOG_WANDB:
+            wandb.log({"epoch_time": epoch_time})
+
         # Log evaluation metrics
         for task_name, values in metrics.items():
             avg_metric = sum(values) / len(values)
-            wandb.log({f"val_{task_name}_metric": avg_metric})
+            if LOG_WANDB:
+                wandb.log({f"val_{task_name}_metric": avg_metric})
 
-    wandb.finish()
+    if LOG_WANDB:
+        wandb.finish()
     # Save the model
     torch.save(model.state_dict(), MODEL_PATH)
     print(f"Model saved to {MODEL_PATH}")
