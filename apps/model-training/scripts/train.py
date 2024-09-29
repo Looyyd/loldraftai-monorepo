@@ -3,6 +3,10 @@ import os
 import pickle
 import glob
 import time
+import cProfile
+import pstats
+import io
+from pstats import SortKey
 
 import torch
 import torch.optim as optim
@@ -26,6 +30,7 @@ from utils import (
     TASK_STATS_PATH,
     TRAIN_BATCH_SIZE,
     NUMERICAL_STATS_PATH,
+    DATA_DIR,
 )
 from utils.column_definitions import (
     COLUMNS,
@@ -205,8 +210,8 @@ def train_model(run_name: str):
         for batch_idx, (features, labels) in enumerate(train_loader):
 
             # Move all features to the device
-            features = {k: v.to(device) for k, v in features.items()}
-            labels = {k: v.to(device) for k, v in labels.items()}
+            features = {k: v.to(device, non_blocking=True) for k, v in features.items()}
+            labels = {k: v.to(device, non_blocking=True) for k, v in labels.items()}
 
             optimizer.zero_grad()
             # only works with CUDA
@@ -254,8 +259,10 @@ def train_model(run_name: str):
         with torch.no_grad():
             for features, labels in test_loader:
                 # Move all features to the device
-                features = {k: v.to(device) for k, v in features.items()}
-                labels = {k: v.to(device) for k, v in labels.items()}
+                features = {
+                    k: v.to(device, non_blocking=True) for k, v in features.items()
+                }
+                labels = {k: v.to(device, non_blocking=True) for k, v in labels.items()}
 
                 # TODO: avg_validation_loss
                 outputs = model(features)
@@ -315,8 +322,29 @@ if __name__ == "__main__":
         default="initial-setup",
         help="Name for the Wandb run",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable profiling",
+    )
     args = parser.parse_args()
+
+    if args.profile:
+        profiler = cProfile.Profile()
+        profiler.enable()
 
     # Set random seeds for reproducibility
     set_random_seeds()
     train_model(args.run_name)
+
+    if args.profile:
+        profiler.disable()
+        s = io.StringIO()
+        sortby = SortKey.CUMULATIVE
+        ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        print(s.getvalue())
+
+        # Optionally, save profiling results to a file
+        ps.dump_stats(DATA_DIR + "train_profile.prof")
+        print("Profiling data saved to train_profile.prof")
