@@ -67,39 +67,34 @@ def collate_fn(batch):
     means = stats["means"]
     stds = stats["stds"]
 
-    collated = {}
+    collated = {col: [] for col in COLUMNS}
+    collated_labels = {task: [] for task in TASKS}
+
+    for item in batch:
+        for col, col_def in COLUMNS.items():
+            collated[col].append(item[col])
+        for task in TASKS:
+            collated_labels[task].append(item[task])
+
     for col, col_def in COLUMNS.items():
         if col_def.column_type == ColumnType.LIST:
-            # For list columns, stack the tensors
-            collated[col] = torch.stack(
-                [item[col] for item in batch]
-            )  # Shape: [batch_size, seq_length]
+            collated[col] = torch.stack(collated[col])
         elif col_def.column_type == ColumnType.CATEGORICAL:
-            # Convert list of integers to a tensor
-            collated[col] = torch.tensor(
-                [item[col] for item in batch], dtype=torch.long
-            )  # Shape: [batch_size]
+            collated[col] = torch.tensor(collated[col], dtype=torch.long)
         elif col_def.column_type == ColumnType.NUMERICAL:
-            # Normalize numerical features
-            values = torch.tensor(
-                [item[col] for item in batch], dtype=torch.float
-            )  # Shape: [batch_size]
-            mean = means[col]
-            std = stds[col] if stds[col] > 0 else 1.0  # Avoid division by zero
-            values = (values - mean) / std
-            collated[col] = values
+            values = torch.tensor(collated[col], dtype=torch.float)
+            mean, std = means[col], max(stds[col], 1.0)
+            collated[col] = (values - mean) / std
 
-    # Collect labels for all tasks
-    collated_labels = {}
-    for task_name in TASKS.keys():
-        task_labels = [item[task_name] for item in batch]
-        if TASKS[task_name].task_type == TaskType.BINARY_CLASSIFICATION:
-            labels = torch.tensor(task_labels, dtype=torch.float)
-        elif TASKS[task_name].task_type == TaskType.REGRESSION:
-            labels = torch.tensor(task_labels, dtype=torch.float)
-        elif TASKS[task_name].task_type == TaskType.MULTICLASS_CLASSIFICATION:
-            labels = torch.tensor(task_labels, dtype=torch.long)
-        collated_labels[task_name] = labels
+    for task_name, task_def in TASKS.items():
+        dtype = (
+            torch.float
+            if task_def.task_type != TaskType.MULTICLASS_CLASSIFICATION
+            else torch.long
+        )
+        collated_labels[task_name] = torch.tensor(
+            collated_labels[task_name], dtype=dtype
+        )
 
     return collated, collated_labels
 
