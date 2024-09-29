@@ -145,12 +145,14 @@ def train_model(run_name: str):
         batch_size=TRAIN_BATCH_SIZE,
         num_workers=DATALOADER_WORKERS,
         collate_fn=collate_fn,
+        prefetch_factor=1,  # Prefetch next batch while current batch is being processed
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=TRAIN_BATCH_SIZE,
         num_workers=DATALOADER_WORKERS,
         collate_fn=collate_fn,
+        prefetch_factor=1,  # Prefetch next batch while current batch is being processed
     )
 
     # Determine the number of unique categories from label encoders
@@ -239,7 +241,7 @@ def train_model(run_name: str):
                 wandb.log(log_data)
 
             avg_loss = epoch_loss / epoch_steps
-            # print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+            print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
             if LOG_WANDB:
                 wandb.log({"epoch": epoch + 1, "avg_train_loss": avg_loss})
 
