@@ -1,12 +1,11 @@
-# utils/model.py
+# Utils/model.py
+
 import torch
 import torch.nn as nn
 import pickle
 
 from utils import ENCODERS_PATH
 from utils.column_definitions import (
-    COLUMNS,
-    ColumnType,
     NUMERICAL_COLUMNS,
     CATEGORICAL_COLUMNS,
     POSITIONS,
@@ -19,24 +18,27 @@ class MatchOutcomeModel(nn.Module):
         self,
         num_categories,
         num_champions,
-        num_numerical_features=0,
         embed_dim=64,
         num_heads=4,
         num_transformer_layers=2,
         dropout=0.1,
     ):
         super(MatchOutcomeModel, self).__init__()
-        # Embeddings for categorical features
-        self.embeddings = nn.ModuleDict()
         self.embed_dim = embed_dim
         self.num_positions = len(POSITIONS) * 2  # Assuming two teams
 
-        for col, col_def in COLUMNS.items():
-            if col_def.column_type == ColumnType.CATEGORICAL:
-                self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
+        # Define context features (all features except 'champion_ids')
+        self.context_categorical_features = CATEGORICAL_COLUMNS
+        self.context_numerical_features = NUMERICAL_COLUMNS
+
+        # Embeddings for categorical context features
+        self.embeddings = nn.ModuleDict()
+        for col in self.context_categorical_features:
+            self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
 
         # Embedding for champions
         self.champion_embedding = nn.Embedding(num_champions, embed_dim)
+
         # Positional embedding for roles
         self.position_embedding = nn.Embedding(self.num_positions, embed_dim)
 
@@ -52,24 +54,14 @@ class MatchOutcomeModel(nn.Module):
             encoder_layer, num_layers=num_transformer_layers
         )
 
-        # Linear layer for numerical features
-        self.num_numerical_features = num_numerical_features
-        if num_numerical_features > 0:
-            self.numerical_layer = nn.Sequential(
-                nn.Linear(num_numerical_features, embed_dim),
-                nn.BatchNorm1d(embed_dim),
-                nn.GELU(),
-            )
-
-        # Fully connected layers
-        total_feature_dim = (
-            len(CATEGORICAL_COLUMNS) * embed_dim  # Categorical features
-            + embed_dim  # Processed champion features
-            + (embed_dim if num_numerical_features > 0 else 0)  # Numerical features
+        # Projection layer for numerical context features
+        self.numerical_context_proj = nn.Linear(
+            len(self.context_numerical_features), embed_dim
         )
 
+        # Fully connected layers
         self.fc = nn.Sequential(
-            nn.Linear(total_feature_dim, 128),
+            nn.Linear(embed_dim, 128),
             nn.BatchNorm1d(128),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -77,9 +69,7 @@ class MatchOutcomeModel(nn.Module):
 
         # Create output layers for each task
         self.output_layers = nn.ModuleDict()
-
         for task_name, task_def in TASKS.items():
-            # Output layers for tasks using shared representation
             if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
                 self.output_layers[task_name] = nn.Sequential(
                     nn.Linear(128, 1),
@@ -89,42 +79,79 @@ class MatchOutcomeModel(nn.Module):
                 self.output_layers[task_name] = nn.Linear(128, 1)
 
     def forward(self, features):
-        embedded_features = []
+        # Compute context vector
+        context_vector = self.compute_context_vector(features)
 
-        # Process categorical features
-        for col in CATEGORICAL_COLUMNS:
-            embedded = self.embeddings[col](features[col])  # [batch_size, embed_dim]
-            embedded_features.append(embedded)
+        # Process champion embeddings
+        champion_features = self.process_champion_embeddings(features, context_vector)
 
-        # Process numerical features
-        if self.num_numerical_features > 0:
-            numerical_features = torch.stack(
-                [features[col] for col in NUMERICAL_COLUMNS], dim=1
-            )
-            numerical_embedding = self.numerical_layer(numerical_features)
-            embedded_features.append(numerical_embedding)
+        # Pass through fully connected layers
+        x = self.fc(champion_features)  # Shared representation
 
-        # Process champion embeddings with positional embeddings
-        # Assume features['champion_ids'] has shape [batch_size, num_champions]
-        batch_size = features["champion_ids"].size(0)
+        outputs = {}
+        for task_name, output_layer in self.output_layers.items():
+            outputs[task_name] = output_layer(x).squeeze(-1)
+
+        return outputs
+
+    def compute_context_vector(self, features):
+        """
+        Computes the context vector by embedding categorical and numerical context features.
+        """
+        # Embed categorical context features and sum them
+        context_embeds = []
+        for col in self.context_categorical_features:
+            embed = self.embeddings[col](features[col])  # [batch_size, embed_dim]
+            context_embeds.append(embed)
+
+        # Project numerical context features into embedding space
+        if self.context_numerical_features:
+            numerical_context_features = torch.stack(
+                [features[col] for col in self.context_numerical_features], dim=1
+            )  # [batch_size, num_context_numerical_features]
+            numerical_context_embed = self.numerical_context_proj(
+                numerical_context_features
+            )  # [batch_size, embed_dim]
+            context_embeds.append(numerical_context_embed)
+
+        # Sum all context embeddings to create the context vector
+        context_vector = torch.stack(context_embeds, dim=0).sum(
+            dim=0
+        )  # [batch_size, embed_dim]
+
+        return context_vector
+
+    def process_champion_embeddings(self, features, context_vector):
+        """
+        Processes champion embeddings by adding position embeddings and context vector,
+        then passing through a transformer encoder and pooling.
+        """
+        batch_size, num_champions = features["champion_ids"].size()
+        device = features["champion_ids"].device
+
+        # Embed champions
         champion_embeds = self.champion_embedding(
             features["champion_ids"]
         )  # [batch_size, num_champions, embed_dim]
 
-        # Create position indices tensor
-        position_indices = torch.arange(
-            self.num_positions, device=features["champion_ids"].device
-        )
-        position_indices = position_indices.unsqueeze(0).expand(
-            batch_size, -1
+        # Embed positions
+        position_indices = (
+            torch.arange(num_champions, device=device)
+            .unsqueeze(0)
+            .expand(batch_size, -1)
         )  # [batch_size, num_champions]
         position_embeds = self.position_embedding(
             position_indices
         )  # [batch_size, num_champions, embed_dim]
 
-        # Sum champion and position embeddings
+        # Expand context vector to match champion embeddings
+        context_vector_expanded = context_vector.unsqueeze(
+            1
+        )  # [batch_size, 1, embed_dim]
+
+        # Sum champion, position, and context embeddings
         champion_inputs = (
-            champion_embeds + position_embeds
+            champion_embeds + position_embeds + context_vector_expanded
         )  # [batch_size, num_champions, embed_dim]
 
         # Pass through transformer encoder
@@ -132,22 +159,10 @@ class MatchOutcomeModel(nn.Module):
             champion_inputs
         )  # [batch_size, num_champions, embed_dim]
 
-        # Pooling: We can use mean pooling over the sequence dimension
+        # Pooling: mean over the sequence dimension
         champion_features = transformer_output.mean(dim=1)  # [batch_size, embed_dim]
 
-        embedded_features.append(champion_features)
-
-        # Concatenate all features
-        x = torch.cat(embedded_features, dim=1)
-
-        # Pass through fully connected layers
-        x = self.fc(x)  # Shared representation
-
-        outputs = {}
-        for task_name, output_layer in self.output_layers.items():
-            outputs[task_name] = output_layer(x).squeeze(-1)
-
-        return outputs
+        return champion_features
 
 
 if __name__ == "__main__":
@@ -163,7 +178,6 @@ if __name__ == "__main__":
     model = MatchOutcomeModel(
         num_categories=num_categories,
         num_champions=num_champions,
-        num_numerical_features=len(NUMERICAL_COLUMNS),
         embed_dim=32,
         dropout=0,
     )

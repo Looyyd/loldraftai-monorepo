@@ -168,7 +168,6 @@ def train_model(run_name: str):
     model = MatchOutcomeModel(
         num_categories=num_categories,
         num_champions=num_champions,
-        num_numerical_features=len(NUMERICAL_COLUMNS),
         embed_dim=32,
         dropout=0.1,
     )
@@ -192,12 +191,12 @@ def train_model(run_name: str):
         elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
             criterion[task_name] = nn.CrossEntropyLoss()
 
-    # TODO: could not weight decay bias and normlisaiton layers
+    # TODO: could remove weight decay from bias and normalization layers
     optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
     max_grad_norm = 1.0
 
     # Training loop
-    num_epochs = 10
+    num_epochs = 35
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
 
