@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 
 import ChampionGrid from "./ChampionGrid";
 import TeamPanel from "./TeamPanel";
-import HelpModal from "./HelpModal";
+import { HelpModal } from "./HelpModal";
 import AnalysisParent from "./AnalysisParent";
 import type {
   Champion,

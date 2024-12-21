@@ -39,6 +39,7 @@ export const predictGame = async (
     patch,
   };
 
+  console.log("Request body:", requestBody);
   try {
     const response = await fetch("/api/predict", {
       method: "POST",
@@ -75,6 +76,8 @@ export const predictGameInDepth = async (
     numerical_elo: eloToNumerical(elo),
     patch,
   };
+  
+  console.log("Request body:", requestBody);
 
   const response = await fetch("/api/predict-in-depth", {
     method: "POST",
@@ -83,6 +86,8 @@ export const predictGameInDepth = async (
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Error response:", errorText);
     throw new Error(`HTTP error! status: ${response.status}`);
   }
 

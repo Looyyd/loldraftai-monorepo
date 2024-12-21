@@ -13,6 +13,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      console.error("Detailed prediction error:", response);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 

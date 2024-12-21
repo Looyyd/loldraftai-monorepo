@@ -7,21 +7,12 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../ui/context-menu";
-
-// Types that should be moved to a shared types package
-export interface Champion {
-  name: string;
-  icon: string;
-}
-
-export type ChampionIndex = 0 | 1 | 2 | 3 | 4;
-export type TeamIndex = 1 | 2;
-export type Team = (Champion | undefined)[];
-
-export interface SelectedSpot {
-  teamIndex: TeamIndex;
-  championIndex: ChampionIndex;
-}
+import type {
+  Team,
+  ChampionIndex,
+  TeamIndex,
+  SelectedSpot,
+} from "@draftking/ui/lib/types";
 
 // Image component interface
 interface ImageComponentProps {
@@ -125,7 +116,9 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                       <ContextMenu>
                         <ContextMenuTrigger>
                           <div
-                            onMouseEnter={() => setHoveredChampion(championIndex)}
+                            onMouseEnter={() =>
+                              setHoveredChampion(championIndex)
+                            }
                             onMouseLeave={() => setHoveredChampion(null)}
                             className="flex cursor-pointer items-center justify-between"
                           >
@@ -159,4 +152,4 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
       </div>
     </div>
   );
-}; 
+};
