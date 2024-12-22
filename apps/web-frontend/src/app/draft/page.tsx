@@ -117,33 +117,44 @@ export default function Draft() {
   };
 
   return (
-    <main className="flex  w-full flex-col items-center">
+    <main className="flex w-full flex-col items-center">
       <div className="mx-auto">
-        <div className="flex gap-2 mb-4">
-          <Button variant="outline" onClick={resetDraft}>
-            Reset Draft
-          </Button>
-          <Select
-            value={selectedDraftOrder}
-            onValueChange={(value: DraftOrderKey) =>
-              setSelectedDraftOrder(value)
-            }
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select draft order" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.keys(DRAFT_ORDERS).map((order) => (
-                <SelectItem key={order} value={order}>
-                  {order}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Button variant="outline" onClick={openHelpModal}>
-            Help
-          </Button>
+        <div className="flex flex-wrap items-stretch justify-start mb-4">
+          <div className="flex w-full p-1 sm:w-auto">
+            <div className="flex-1">
+              <Button variant="outline" onClick={resetDraft}>
+                Reset Draft
+              </Button>
+            </div>
+          </div>
+          <div className="flex w-full p-1 sm:w-auto">
+            <div className="flex-1">
+              <Select
+                value={selectedDraftOrder}
+                onValueChange={(value: DraftOrderKey) =>
+                  setSelectedDraftOrder(value)
+                }
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select draft order" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(DRAFT_ORDERS).map((order) => (
+                    <SelectItem key={order} value={order}>
+                      {order}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex w-full p-1 sm:w-auto">
+            <div className="flex-1">
+              <Button variant="outline" onClick={openHelpModal}>
+                Help
+              </Button>
+            </div>
+          </div>
         </div>
         <HelpModal isOpen={showHelpModal} closeHandler={closeHelpModal} />
 
