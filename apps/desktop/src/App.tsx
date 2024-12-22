@@ -36,7 +36,13 @@ const PlainImage: React.FC<{
   className?: string;
 }> = (props) => <img {...props} />;
 
-const emptyTeam: Team = [undefined, undefined, undefined, undefined, undefined];
+const emptyTeam: Team = {
+  0: undefined,
+  1: undefined,
+  2: undefined,
+  3: undefined,
+  4: undefined,
+};
 
 const DRAFT_ORDERS = {
   "Draft Order": [0, 1, 1, 0, 0, 1, 1, 0, 0, 1],
@@ -102,8 +108,8 @@ function App() {
       );
     }
 
-    const newTeam = [...team];
-    newTeam[index] = undefined;
+    const newTeam = { ...team };
+    delete newTeam[index];
     if (team === teamOne) {
       setTeamOne(newTeam);
     } else {
@@ -132,7 +138,7 @@ function App() {
     if (selectedSpot) {
       // If a spot is selected, add champion there
       const newTeam =
-        selectedSpot.teamIndex === 1 ? [...teamOne] : [...teamTwo];
+        selectedSpot.teamIndex === 1 ? { ...teamOne } : { ...teamTwo };
       newTeam[selectedSpot.championIndex] = champion;
 
       if (selectedSpot.teamIndex === 1) {
@@ -174,12 +180,13 @@ function App() {
       }
     }
 
-    const newTeam = [...team];
+    const newTeam = { ...team };
 
     // Try to place champion in their preferred role first
     for (const roleIndex of potentialRolesIndexes) {
-      if (!newTeam[roleIndex]) {
-        newTeam[roleIndex] = champion;
+      // i is less than 5 so it's safe to cast to ChampionIndex
+      if (!newTeam[roleIndex as ChampionIndex]) {
+        newTeam[roleIndex as ChampionIndex] = champion;
         setTeam(newTeam);
 
         // Update remaining champions
@@ -225,89 +232,99 @@ function App() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <div className="flex gap-2 p-4">
-        <Button variant="outline" onClick={resetDraft}>
-          Reset Draft
-        </Button>
-        <Select
-          value={selectedDraftOrder}
-          onValueChange={(value: DraftOrderKey) => setSelectedDraftOrder(value)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Select draft order" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.keys(DRAFT_ORDERS).map((order) => (
-              <SelectItem key={order} value={order}>
-                {order}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button variant="outline" onClick={() => setShowHelpModal(true)}>
-          Help
-        </Button>
-      </div>
-
-      <HelpModal
-        isOpen={showHelpModal}
-        closeHandler={() => setShowHelpModal(false)}
-      />
-
-      <div className="text-center text-lg font-semibold mb-4">
-        {getStatusMessage()}
-      </div>
-
-      <div className="flex flex-1 gap-4 p-4">
-        <div className="w-1/4">
-          <TeamPanel
-            team={teamOne}
-            is_first_team={true}
-            selectedSpot={selectedSpot}
-            onDeleteChampion={(index) => handleDeleteChampion(index, teamOne)}
-            onSpotSelected={handleSpotSelected}
-            ImageComponent={PlainImage}
-          />
+    <div className="container mx-auto mt-12">
+      <div className="mx-auto">
+        <div className="flex gap-2 mb-4">
+          <Button variant="outline" onClick={resetDraft}>
+            Reset Draft
+          </Button>
+          <Select
+            value={selectedDraftOrder}
+            onValueChange={(value: DraftOrderKey) =>
+              setSelectedDraftOrder(value)
+            }
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select draft order" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.keys(DRAFT_ORDERS).map((order) => (
+                <SelectItem key={order} value={order}>
+                  {order}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => setShowHelpModal(true)}>
+            Help
+          </Button>
         </div>
 
-        <div className="w-1/2">
-          <ChampionGrid
-            champions={remainingChampions}
-            addChampion={handleAddChampion}
-            favorites={favorites}
-            setFavorites={setFavorites}
-            ImageComponent={PlainImage}
-          />
-        </div>
-
-        <div className="w-1/4">
-          <TeamPanel
-            team={teamTwo}
-            is_first_team={false}
-            selectedSpot={selectedSpot}
-            onDeleteChampion={(index) => handleDeleteChampion(index, teamTwo)}
-            onSpotSelected={handleSpotSelected}
-            ImageComponent={PlainImage}
-          />
-        </div>
-      </div>
-
-      <div className="p-4">
-        <AnalysisParent
-          team1={teamOne}
-          team2={teamTwo}
-          selectedSpot={selectedSpot}
-          favorites={favorites}
-          remainingChampions={remainingChampions}
-          analysisTrigger={0}
-          elo={elo}
-          setElo={setElo}
-          currentPatch={currentPatch}
-          patches={patches}
-          setCurrentPatch={setCurrentPatch}
-          setPatchList={setPatchList}
+        <HelpModal
+          isOpen={showHelpModal}
+          closeHandler={() => setShowHelpModal(false)}
         />
+
+        <div className="text-center text-lg font-semibold mb-4">
+          {getStatusMessage()}
+        </div>
+
+        <div className="flex flex-wrap items-stretch justify-evenly">
+          <div className="flex w-full justify-between">
+            <div className="flex w-auto max-w-xs p-1">
+              <TeamPanel
+                team={teamOne}
+                is_first_team={true}
+                selectedSpot={selectedSpot}
+                onDeleteChampion={(index) =>
+                  handleDeleteChampion(index, teamOne)
+                }
+                onSpotSelected={handleSpotSelected}
+                ImageComponent={PlainImage}
+              />
+            </div>
+
+            <div className="grow p-1">
+              <ChampionGrid
+                champions={remainingChampions}
+                addChampion={handleAddChampion}
+                favorites={favorites}
+                setFavorites={setFavorites}
+                ImageComponent={PlainImage}
+              />
+            </div>
+
+            <div className="flex w-auto max-w-xs p-1">
+              <TeamPanel
+                team={teamTwo}
+                is_first_team={false}
+                selectedSpot={selectedSpot}
+                onDeleteChampion={(index) =>
+                  handleDeleteChampion(index, teamTwo)
+                }
+                onSpotSelected={handleSpotSelected}
+                ImageComponent={PlainImage}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <AnalysisParent
+            team1={teamOne}
+            team2={teamTwo}
+            selectedSpot={selectedSpot}
+            favorites={favorites}
+            remainingChampions={remainingChampions}
+            analysisTrigger={0}
+            elo={elo}
+            setElo={setElo}
+            currentPatch={currentPatch}
+            patches={patches}
+            setCurrentPatch={setCurrentPatch}
+            setPatchList={setPatchList}
+          />
+        </div>
       </div>
     </div>
   );

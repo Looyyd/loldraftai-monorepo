@@ -292,7 +292,7 @@ export default function Draft() {
   };
 
   return (
-    <main className="flex min-h-screen w-full flex-col items-center">
+    <main className="flex  w-full flex-col items-center">
       <div className="mx-auto">
         <div className="flex gap-2 mb-4">
           <Button variant="outline" onClick={resetDraft}>
