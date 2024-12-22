@@ -14,7 +14,7 @@ import type {
   SelectedSpot,
   FavoriteChampions,
 } from "@/app/types";
-import { champions, roleToIndexMap, getChampionRoles } from "@/app/champions";
+import { champions } from "@/app/champions";
 import { Button } from "@draftking/ui/components/ui/button";
 import {
   Select,
@@ -25,44 +25,15 @@ import {
 } from "@draftking/ui/components/ui/select";
 import { useDraftStore } from "@/app/stores/draftStore";
 import Cookies from "js-cookie";
-
-const emptyTeam: Team = {
-  0: undefined,
-  1: undefined,
-  2: undefined,
-  3: undefined,
-  4: undefined,
-};
-
-const DRAFT_ORDERS = {
-  "Draft Order": [0, 1, 1, 0, 0, 1, 1, 0, 0, 1],
-  "Blue then Red": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  "Red then Blue": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-} as const;
-
-type DraftOrderKey = keyof typeof DRAFT_ORDERS;
-
-function getNextPickingTeam(
-  teamOne: Team,
-  teamTwo: Team,
-  pickOrder: readonly number[]
-): "BLUE" | "RED" | null {
-  const teamOneLength = Object.values(teamOne).filter(
-    (c) => c !== undefined
-  ).length;
-  const teamTwoLength = Object.values(teamTwo).filter(
-    (c) => c !== undefined
-  ).length;
-  const championsPicked = teamOneLength + teamTwoLength;
-
-  if (championsPicked >= 10) return null;
-
-  if (pickOrder[championsPicked] === 0) {
-    return teamOneLength >= 5 ? "RED" : "BLUE";
-  } else {
-    return teamTwoLength >= 5 ? "BLUE" : "RED";
-  }
-}
+import {
+  emptyTeam,
+  DRAFT_ORDERS,
+  handleSpotSelection as handleSpotSelectionLogic,
+  addChampion as addChampionLogic,
+  handleDeleteChampion as handleDeleteChampionLogic,
+  type DraftOrderKey,
+} from "@draftking/ui/lib/draftLogic";
+import { StatusMessage } from "@draftking/ui/components/draftking/StatusMessage";
 
 export default function Draft() {
   const [remainingChampions, setRemainingChampions] =
@@ -70,7 +41,6 @@ export default function Draft() {
   const [teamOne, setTeamOne] = useState<Team>(emptyTeam);
   const [teamTwo, setTeamTwo] = useState<Team>(emptyTeam);
   const [analysisTrigger] = useState(0);
-  const teams = [teamOne, teamTwo];
   const [selectedSpot, setSelectedSpot] = useState<SelectedSpot | null>(null);
   const [favorites, setFavorites] = useState<FavoriteChampions>({
     top: [],
@@ -104,190 +74,45 @@ export default function Draft() {
   };
 
   const handleSpotSelection = (index: ChampionIndex, team: TeamIndex) => {
-    // If no spot is currently selected, select the new spot
-    if (!selectedSpot) {
-      setSelectedSpot({ teamIndex: team, championIndex: index });
-      return;
-    }
-
-    // If the same spot is clicked again, deselect it
-    if (
-      selectedSpot.teamIndex === team &&
-      selectedSpot.championIndex === index
-    ) {
-      setSelectedSpot(null);
-      return;
-    }
-
-    const teamOneCopy = { ...teamOne };
-    const teamTwoCopy = { ...teamTwo };
-    const championFromSelectedSpot =
-      selectedSpot.teamIndex === 1
-        ? teamOneCopy[selectedSpot.championIndex]
-        : teamTwoCopy[selectedSpot.championIndex];
-    const targetChampion = team === 1 ? teamOneCopy[index] : teamTwoCopy[index];
-
-    //if both spots are empty, select the new spot
-    if (
-      championFromSelectedSpot === undefined &&
-      targetChampion === undefined
-    ) {
-      setSelectedSpot({ teamIndex: team, championIndex: index });
-      return;
-    }
-
-    // Swap the champions between the two spots
-    if (selectedSpot.teamIndex === 1) {
-      if (team === 1) {
-        // Swap within the same team
-        teamOneCopy[selectedSpot.championIndex] = targetChampion;
-        teamOneCopy[index] = championFromSelectedSpot;
-        setTeamOne(teamOneCopy);
-      } else {
-        // Swap between different teams
-        teamOneCopy[selectedSpot.championIndex] = targetChampion;
-        teamTwoCopy[index] = championFromSelectedSpot;
-        setTeamOne(teamOneCopy);
-        setTeamTwo(teamTwoCopy);
-      }
-    } else {
-      if (team === 2) {
-        // Swap within the same team
-        teamTwoCopy[selectedSpot.championIndex] = targetChampion;
-        teamTwoCopy[index] = championFromSelectedSpot;
-        setTeamTwo(teamTwoCopy);
-      } else {
-        // Swap between different teams
-        teamTwoCopy[selectedSpot.championIndex] = targetChampion;
-        teamOneCopy[index] = championFromSelectedSpot;
-        setTeamOne(teamOneCopy);
-        setTeamTwo(teamTwoCopy);
-      }
-    }
-
-    // Reset the selected spot
-    setSelectedSpot(null);
+    handleSpotSelectionLogic(
+      index,
+      team,
+      selectedSpot,
+      teamOne,
+      teamTwo,
+      setTeamOne,
+      setTeamTwo,
+      setSelectedSpot
+    );
   };
 
   const addChampion = (champion: Champion) => {
-    if (selectedSpot !== null) {
-      const team = teams[selectedSpot.teamIndex - 1];
-
-      let updatedRemainingChampions = handleDeleteChampion(
-        selectedSpot.championIndex,
-        team
-      );
-
-      if (selectedSpot.teamIndex === 1) {
-        const newTeam = { ...teamOne };
-        newTeam[selectedSpot.championIndex] = champion;
-        setTeamOne(newTeam);
-      } else {
-        const newTeam = { ...teamTwo };
-        newTeam[selectedSpot.championIndex] = champion;
-        setTeamTwo(newTeam);
-      }
-      updatedRemainingChampions = updatedRemainingChampions.filter(
-        (c) => c.id !== champion.id
-      );
-      setRemainingChampions(updatedRemainingChampions);
-
-      setSelectedSpot(null);
-      return;
-    }
-
-    const pickOrder = DRAFT_ORDERS[selectedDraftOrder];
-    const nextTeam = getNextPickingTeam(teamOne, teamTwo, pickOrder);
-    if (!nextTeam) return;
-
-    const champions = remainingChampions.filter((c) => c.id !== champion.id);
-    setRemainingChampions(champions);
-
-    const teamToAddToIndex = nextTeam === "BLUE" ? 0 : 1;
-    const potentialRoles = getChampionRoles(champion.id, currentPatch);
-
-    const potentialRolesIndexes = potentialRoles.map(
-      (role) => roleToIndexMap[role]
+    addChampionLogic(
+      champion,
+      selectedSpot,
+      teamOne,
+      teamTwo,
+      remainingChampions,
+      currentPatch,
+      selectedDraftOrder,
+      setTeamOne,
+      setTeamTwo,
+      setRemainingChampions,
+      setSelectedSpot,
+      handleDeleteChampion
     );
-    // add rest of indexes at the end of potentialRolesIndexes
-    for (let i = 0; i < 5; i++) {
-      if (!potentialRolesIndexes.includes(i)) {
-        potentialRolesIndexes.push(i);
-      }
-    }
-    // add to first available spot
-    for (let i = 0; i < 5; i++) {
-      const roleIndex = potentialRolesIndexes[i];
-      if (teamToAddToIndex === 0 && !teamOne[roleIndex as keyof Team]) {
-        setTeamOne({
-          ...teams[teamToAddToIndex],
-          [roleIndex as keyof Team]: champion,
-        });
-        return;
-      } else if (teamToAddToIndex === 1 && !teamTwo[roleIndex as keyof Team]) {
-        setTeamTwo({
-          ...teams[teamToAddToIndex],
-          [roleIndex as keyof Team]: champion,
-        });
-        return;
-      }
-    }
   };
 
   const handleDeleteChampion = (index: ChampionIndex, team: Team) => {
-    const champion = team[index];
-    if (champion === undefined) {
-      return remainingChampions;
-    }
-    // Check if the champion is already in the remaining champions list
-    const isChampionAlreadyRemaining = remainingChampions.some(
-      (remainingChampion) => remainingChampion.id === champion.id
-    );
-    let champions;
-    if (!isChampionAlreadyRemaining) {
-      champions = [...remainingChampions, champion].sort((a, b) =>
-        a.name.localeCompare(b.name)
-      );
-      setRemainingChampions(champions);
-    } else {
-      champions = [...remainingChampions];
-    }
-
-    if (team === teamOne) {
-      const newTeam = { ...teamOne };
-      delete newTeam[index];
-      setTeamOne(newTeam);
-    } else {
-      const newTeam = { ...teamTwo };
-      delete newTeam[index];
-      setTeamTwo(newTeam);
-    }
-    return champions;
-  };
-
-  const getStatusMessage = () => {
-    if (selectedSpot) {
-      const team = selectedSpot.teamIndex === 1 ? "BLUE" : "RED";
-      const teamClass =
-        selectedSpot.teamIndex === 1 ? "text-blue-500" : "text-red-500";
-      return (
-        <span>
-          Next Pick: <span className={teamClass}>{team}</span> SELECTED SPOT
-        </span>
-      );
-    }
-    const nextTeam = getNextPickingTeam(
+    return handleDeleteChampionLogic(
+      index,
+      team,
       teamOne,
       teamTwo,
-      DRAFT_ORDERS[selectedDraftOrder]
-    );
-    if (!nextTeam) return "Draft Complete";
-
-    const teamClass = nextTeam === "BLUE" ? "text-blue-500" : "text-red-500";
-    return (
-      <span>
-        Next Pick: <span className={teamClass}>{nextTeam}</span> TEAM
-      </span>
+      remainingChampions,
+      setTeamOne,
+      setTeamTwo,
+      setRemainingChampions
     );
   };
 
@@ -323,7 +148,12 @@ export default function Draft() {
         <HelpModal isOpen={showHelpModal} closeHandler={closeHelpModal} />
 
         <div className="text-center text-lg font-semibold mb-4">
-          {getStatusMessage()}
+          <StatusMessage
+            selectedSpot={selectedSpot}
+            teamOne={teamOne}
+            teamTwo={teamTwo}
+            selectedDraftOrder={selectedDraftOrder}
+          />
         </div>
 
         <div className="flex flex-wrap items-stretch justify-evenly">

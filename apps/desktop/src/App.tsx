@@ -4,11 +4,7 @@ import { TeamPanel } from "@draftking/ui/components/draftking/TeamPanel";
 import { ChampionGrid } from "@draftking/ui/components/draftking/ChampionGrid";
 import { AnalysisParent } from "./components/AnalysisParent";
 import { HelpModal } from "@draftking/ui/components/draftking/HelpModal";
-import {
-  champions,
-  getChampionRoles,
-  roleToIndexMap,
-} from "@draftking/ui/lib/champions";
+import { champions } from "@draftking/ui/lib/champions";
 import { useDraftStore } from "./stores/draftStore";
 import type {
   Team,
@@ -26,6 +22,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@draftking/ui/components/ui/select";
+import {
+  emptyTeam,
+  DRAFT_ORDERS,
+  handleSpotSelection,
+  addChampion as addChampionLogic,
+  handleDeleteChampion as handleDeleteChampionLogic,
+  type DraftOrderKey,
+} from "@draftking/ui/lib/draftLogic";
+import { StatusMessage } from "@draftking/ui/components/draftking/StatusMessage";
 
 // Plain image component for Electron
 const PlainImage: React.FC<{
@@ -35,44 +40,6 @@ const PlainImage: React.FC<{
   height: number;
   className?: string;
 }> = (props) => <img {...props} />;
-
-const emptyTeam: Team = {
-  0: undefined,
-  1: undefined,
-  2: undefined,
-  3: undefined,
-  4: undefined,
-};
-
-const DRAFT_ORDERS = {
-  "Draft Order": [0, 1, 1, 0, 0, 1, 1, 0, 0, 1],
-  "Blue then Red": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  "Red then Blue": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-} as const;
-
-type DraftOrderKey = keyof typeof DRAFT_ORDERS;
-
-function getNextPickingTeam(
-  teamOne: Team,
-  teamTwo: Team,
-  pickOrder: readonly number[]
-): "BLUE" | "RED" | null {
-  const teamOneLength = Object.values(teamOne).filter(
-    (c) => c !== undefined
-  ).length;
-  const teamTwoLength = Object.values(teamTwo).filter(
-    (c) => c !== undefined
-  ).length;
-  const championsPicked = teamOneLength + teamTwoLength;
-
-  if (championsPicked >= 10) return null;
-
-  if (pickOrder[championsPicked] === 0) {
-    return teamOneLength >= 5 ? "RED" : "BLUE";
-  } else {
-    return teamTwoLength >= 5 ? "BLUE" : "RED";
-  }
-}
 
 function App() {
   // Draft state
@@ -99,128 +66,45 @@ function App() {
 
   // Handlers
   const handleDeleteChampion = (index: ChampionIndex, team: Team) => {
-    const champion = team[index];
-    if (champion && !remainingChampions.some((c) => c.id === champion.id)) {
-      setRemainingChampions(
-        [...remainingChampions, champion].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        )
-      );
-    }
-
-    const newTeam = { ...team };
-    delete newTeam[index];
-    if (team === teamOne) {
-      setTeamOne(newTeam);
-    } else {
-      setTeamTwo(newTeam);
-    }
+    return handleDeleteChampionLogic(
+      index,
+      team,
+      teamOne,
+      teamTwo,
+      remainingChampions,
+      setTeamOne,
+      setTeamTwo,
+      setRemainingChampions
+    );
   };
 
-  const handleSpotSelected = (index: ChampionIndex, teamIndex: TeamIndex) => {
-    if (!selectedSpot) {
-      setSelectedSpot({ championIndex: index, teamIndex });
-      return;
-    }
-
-    if (
-      selectedSpot.teamIndex === teamIndex &&
-      selectedSpot.championIndex === index
-    ) {
-      setSelectedSpot(null);
-      return;
-    }
-
-    setSelectedSpot({ championIndex: index, teamIndex });
+  const handleSpotSelected = (index: ChampionIndex, team: TeamIndex) => {
+    handleSpotSelection(
+      index,
+      team,
+      selectedSpot,
+      teamOne,
+      teamTwo,
+      setTeamOne,
+      setTeamTwo,
+      setSelectedSpot
+    );
   };
 
   const handleAddChampion = (champion: Champion) => {
-    if (selectedSpot) {
-      // If a spot is selected, add champion there
-      const newTeam =
-        selectedSpot.teamIndex === 1 ? { ...teamOne } : { ...teamTwo };
-      newTeam[selectedSpot.championIndex] = champion;
-
-      if (selectedSpot.teamIndex === 1) {
-        setTeamOne(newTeam);
-      } else {
-        setTeamTwo(newTeam);
-      }
-      setSelectedSpot(null);
-
-      // Update remaining champions
-      setRemainingChampions(
-        remainingChampions.filter((c) => c.id !== champion.id)
-      );
-      return;
-    }
-
-    // Otherwise, follow draft order
-    const nextTeam = getNextPickingTeam(
+    addChampionLogic(
+      champion,
+      selectedSpot,
       teamOne,
       teamTwo,
-      DRAFT_ORDERS[selectedDraftOrder]
-    );
-    if (!nextTeam) return;
-
-    // Get the team to add to
-    const team = nextTeam === "BLUE" ? teamOne : teamTwo;
-    const setTeam = nextTeam === "BLUE" ? setTeamOne : setTeamTwo;
-
-    // Get champion's preferred roles
-    const potentialRoles = getChampionRoles(champion.id, currentPatch);
-    const potentialRolesIndexes = potentialRoles.map(
-      (role) => roleToIndexMap[role]
-    );
-
-    // Add rest of indexes at the end of potentialRolesIndexes
-    for (let i = 0; i < 5; i++) {
-      if (!potentialRolesIndexes.includes(i)) {
-        potentialRolesIndexes.push(i);
-      }
-    }
-
-    const newTeam = { ...team };
-
-    // Try to place champion in their preferred role first
-    for (const roleIndex of potentialRolesIndexes) {
-      // i is less than 5 so it's safe to cast to ChampionIndex
-      if (!newTeam[roleIndex as ChampionIndex]) {
-        newTeam[roleIndex as ChampionIndex] = champion;
-        setTeam(newTeam);
-
-        // Update remaining champions
-        setRemainingChampions(
-          remainingChampions.filter((c) => c.id !== champion.id)
-        );
-        break;
-      }
-    }
-  };
-
-  const getStatusMessage = () => {
-    if (selectedSpot) {
-      const team = selectedSpot.teamIndex === 1 ? "BLUE" : "RED";
-      const teamClass =
-        selectedSpot.teamIndex === 1 ? "text-blue-500" : "text-red-500";
-      return (
-        <span>
-          Next Pick: <span className={teamClass}>{team}</span> SELECTED SPOT
-        </span>
-      );
-    }
-    const nextTeam = getNextPickingTeam(
-      teamOne,
-      teamTwo,
-      DRAFT_ORDERS[selectedDraftOrder]
-    );
-    if (!nextTeam) return "Draft Complete";
-
-    const teamClass = nextTeam === "BLUE" ? "text-blue-500" : "text-red-500";
-    return (
-      <span>
-        Next Pick: <span className={teamClass}>{nextTeam}</span> TEAM
-      </span>
+      remainingChampions,
+      currentPatch,
+      selectedDraftOrder,
+      setTeamOne,
+      setTeamTwo,
+      setRemainingChampions,
+      setSelectedSpot,
+      handleDeleteChampion
     );
   };
 
@@ -266,7 +150,12 @@ function App() {
         />
 
         <div className="text-center text-lg font-semibold mb-4">
-          {getStatusMessage()}
+          <StatusMessage
+            selectedSpot={selectedSpot}
+            teamOne={teamOne}
+            teamTwo={teamTwo}
+            selectedDraftOrder={selectedDraftOrder}
+          />
         </div>
 
         <div className="flex flex-wrap items-stretch justify-evenly">
