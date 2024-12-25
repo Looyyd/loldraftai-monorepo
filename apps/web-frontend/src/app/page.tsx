@@ -74,10 +74,10 @@ export default function HomePage() {
             <p className="text-lg text-center">
               <span className="brand-text">Draftking </span> can help you pick
               the best champion for your game!{" "}
-              <span className="brand-text">Drafking </span>
+              <span className="brand-text">Draftking </span>
               enables you to add champions to your{" "}
               <span className="inline-flex font-bold items-center">
-                favorite{" "}
+                favorites{" "}
                 <StarIcon
                   className="inline-block h-5 w-5 text-yellow-500"
                   stroke="black"
