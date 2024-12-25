@@ -22,6 +22,7 @@ import type {
   Elo,
 } from "@draftking/ui/lib/types";
 import { championIndexToFavoritesPosition } from "@draftking/ui/lib/types";
+import { SparklesIcon, LightBulbIcon } from "@heroicons/react/24/solid";
 
 interface AnalysisParentProps {
   team1: Team;
@@ -113,7 +114,8 @@ const AnalyzeDraftButton = ({
   showAnalysis,
 }: AnalyzeDraftButtonProps) => (
   <Button variant="outline" onClick={toggleAnalyzeDraft}>
-    {showAnalysis ? "Hide Analysis" : "Analyze Draft"}
+    {showAnalysis ? "Hide Analysis" : "Analyze Draft"}{" "}
+    <SparklesIcon className="inline-block h-5 w-5 ml-1" />
   </Button>
 );
 
@@ -132,7 +134,8 @@ const ChampionSuggestionButton = ({
 }: ChampionSuggestionButtonProps) =>
   enableChampionSuggestion ? (
     <Button variant="outline" onClick={toggleChampionSuggestion}>
-      {showChampionSuggestion ? "Hide Suggestions" : "Suggest Champion"}
+      {showChampionSuggestion ? "Hide Suggestions" : "Suggest Champion"}{" "}
+      <LightBulbIcon className="inline-block h-5 w-5 ml-1" />
     </Button>
   ) : (
     <TooltipProvider delayDuration={0}>
@@ -140,7 +143,8 @@ const ChampionSuggestionButton = ({
         <TooltipTrigger asChild>
           <div className="inline-block">
             <Button variant="outline" onClick={toggleChampionSuggestion} disabled>
-              {showChampionSuggestion ? "Hide Suggestions" : "Suggest Champion"}
+              {showChampionSuggestion ? "Hide Suggestions" : "Suggest Champion"}{" "}
+              <LightBulbIcon className="inline-block h-5 w-5 ml-1" />
             </Button>
           </div>
         </TooltipTrigger>
