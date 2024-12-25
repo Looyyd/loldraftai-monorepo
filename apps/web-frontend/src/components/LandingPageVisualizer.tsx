@@ -271,7 +271,7 @@ export function Visualizer() {
           containerRef={containerRef}
           fromRef={left1Ref}
           toRef={centerRef}
-          curvature={-30}
+          curvature={30}
           delay={BEAM_DELAY}
           duration={BEAM_DURATION}
           startXOffset={8}
@@ -281,7 +281,7 @@ export function Visualizer() {
           containerRef={containerRef}
           fromRef={left2Ref}
           toRef={centerRef}
-          curvature={-15}
+          curvature={15}
           delay={BEAM_DELAY}
           duration={BEAM_DURATION}
           startXOffset={8}
@@ -300,7 +300,7 @@ export function Visualizer() {
           containerRef={containerRef}
           fromRef={left4Ref}
           toRef={centerRef}
-          curvature={15}
+          curvature={-15}
           delay={BEAM_DELAY}
           duration={BEAM_DURATION}
           startXOffset={8}
@@ -310,7 +310,7 @@ export function Visualizer() {
           containerRef={containerRef}
           fromRef={left5Ref}
           toRef={centerRef}
-          curvature={30}
+          curvature={-30}
           delay={BEAM_DELAY}
           duration={BEAM_DURATION}
           startXOffset={8}
