@@ -10,8 +10,8 @@ import {
   sortedPatches,
 } from "@draftking/ui/lib/champions";
 import { motion, AnimatePresence } from "framer-motion";
-import { CpuChipIcon } from "@heroicons/react/24/outline";
 import type { Champion } from "@draftking/ui/lib/types";
+import { SparklesIcon } from "@heroicons/react/24/solid";
 
 // Animated champion icon component
 const AnimatedChampionIcon = ({
@@ -244,9 +244,15 @@ export function Visualizer() {
           {/* Center icon */}
           <Circle
             ref={centerRef}
-            className="size-20 bg-background border-[hsl(var(--chart-1))] border-2"
+            className="size-24 bg-background border-[hsl(var(--chart-1))] border-2 flex items-center justify-center"
           >
-            <CpuChipIcon className="size-10 text-[hsl(var(--chart-1))]" />
+            <span className="text-sm font-bold brand-text flex flex-col items-center">
+              <span>Draftking</span>
+              <span className="flex items-center gap-1">
+                AI
+                <SparklesIcon className="size-4 inline-block" />
+              </span>
+            </span>
           </Circle>
 
           {/* Right side champions */}

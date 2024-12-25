@@ -75,12 +75,15 @@ export default function HomePage() {
               <span className="brand-text">Draftking </span> can help you pick
               the best champion for your game!{" "}
               <span className="brand-text">Drafking </span>
-              enables you to add champions to favorite{" "}
-              <StarIcon
-                className="inline-block h-5 w-5 text-yellow-500"
-                stroke="black"
-                strokeWidth={2}
-              />{" "}
+              enables you to add champions to your{" "}
+              <span className="inline-flex font-bold items-center">
+                favorite{" "}
+                <StarIcon
+                  className="inline-block h-5 w-5 text-yellow-500"
+                  stroke="black"
+                  strokeWidth={2}
+                />{" "}
+              </span>{" "}
               for a position. You can then ask{" "}
               <span className="brand-text">Draftking</span> to recommend you the
               best champion for your game!
@@ -98,7 +101,7 @@ export default function HomePage() {
             <span className="brand-text">Draftking</span> is also available as a
             Windows desktop application. The desktop application can connect
             with the League of Legends client to access{" "}
-            <span className="inline-flex items-center">
+            <span className="inline-flex font-bold items-center">
               live{" "}
               <span className="relative flex h-2 w-2 ml-1">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>

@@ -20,7 +20,7 @@ export default function DownloadPage() {
         <p className="text-lg text-muted-foreground">
           Download the latest version of DraftKing for Windows to analyze your
           League of Legends games with{" "}
-          <span className="inline-flex items-center">
+          <span className="inline-flex font-bold items-center">
             live{" "}
             <span className="relative flex h-2 w-2 ml-1">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
