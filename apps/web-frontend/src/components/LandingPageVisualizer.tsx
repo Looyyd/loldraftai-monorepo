@@ -10,10 +10,16 @@ import { CpuChipIcon } from "@heroicons/react/24/outline";
 import type { Champion } from "@draftking/ui/lib/types";
 
 // Animated champion icon component
-const AnimatedChampionIcon = ({ champion }: { champion: Champion }) => (
+const AnimatedChampionIcon = ({
+  champion,
+  shuffleKey,
+}: {
+  champion: Champion;
+  shuffleKey: number;
+}) => (
   <AnimatePresence mode="wait">
     <motion.div
-      key={champion.id}
+      key={`${champion.id}-${shuffleKey}`}
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.8 }}
@@ -104,6 +110,9 @@ export function Visualizer() {
   const BEAM_DURATION = 1.5 as const; // Duration of beam animation
   const TEXT_UPDATE_INTERVAL = 1500 as const; // Update every 3 seconds
 
+  // Add a shuffle counter
+  const [shuffleCount, setShuffleCount] = useState(0);
+
   // Effect for animation
   useEffect(() => {
     // Only start random updates after initial mount
@@ -111,6 +120,7 @@ export function Visualizer() {
       const { left, right } = getRandomChampions(); // No seed, use random
       setLeftChampions(left);
       setRightChampions(right);
+      setShuffleCount((prev) => prev + 1); // Increment counter on each shuffle
     }, TEXT_UPDATE_INTERVAL);
 
     return () => clearInterval(interval);
@@ -127,7 +137,10 @@ export function Visualizer() {
           {[left1Ref, left2Ref, left3Ref, left4Ref, left5Ref].map((ref, i) => (
             <Circle key={i} ref={ref}>
               {leftChampions[i] && (
-                <AnimatedChampionIcon champion={leftChampions[i]} />
+                <AnimatedChampionIcon
+                  champion={leftChampions[i]}
+                  shuffleKey={shuffleCount} // Pass shuffle counter
+                />
               )}
             </Circle>
           ))}
@@ -147,7 +160,10 @@ export function Visualizer() {
             (ref, i) => (
               <Circle key={i} ref={ref}>
                 {rightChampions[i] && (
-                  <AnimatedChampionIcon champion={rightChampions[i]} />
+                  <AnimatedChampionIcon
+                    champion={rightChampions[i]}
+                    shuffleKey={shuffleCount} // Pass shuffle counter
+                  />
                 )}
               </Circle>
             )
