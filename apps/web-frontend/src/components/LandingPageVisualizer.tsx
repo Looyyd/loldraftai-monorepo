@@ -85,25 +85,14 @@ const getRoleChampions = (patch: string = sortedPatches[0]) => {
 
 // Cache the role groups
 const roleChampions = getRoleChampions();
-console.log(roleChampions);
 
-// Get random champions with optional shuffling
-const getRandomChampions = (seed?: number) => {
-  // For the initial render (when seed is provided), use deterministic selection
-  if (seed !== undefined) {
-    const deterministicChampions = champions.slice(0, 20);
-    return {
-      current: {
-        left: deterministicChampions.slice(0, 5),
-        right: deterministicChampions.slice(5, 10),
-      },
-      next: {
-        left: deterministicChampions.slice(10, 15),
-        right: deterministicChampions.slice(15, 20),
-      },
-    };
-  }
+type ChampionsToVisualize = {
+  left: Champion[];
+  right: Champion[];
+};
 
+// Simplified to return only one pair of teams
+const getRandomChampions = (): ChampionsToVisualize => {
   // For subsequent renders, shuffle and use role-based selection
   const shuffledRoles = Object.fromEntries(
     Object.entries(roleChampions).map(([role, champs]) => [
@@ -113,38 +102,20 @@ const getRandomChampions = (seed?: number) => {
   );
 
   return {
-    current: {
-      left: [
-        shuffledRoles.TOP[0],
-        shuffledRoles.JUNGLE[0],
-        shuffledRoles.MIDDLE[0],
-        shuffledRoles.BOTTOM[0],
-        shuffledRoles.UTILITY[0],
-      ],
-      right: [
-        shuffledRoles.TOP[1],
-        shuffledRoles.JUNGLE[1],
-        shuffledRoles.MIDDLE[1],
-        shuffledRoles.BOTTOM[1],
-        shuffledRoles.UTILITY[1],
-      ],
-    },
-    next: {
-      left: [
-        shuffledRoles.TOP[2],
-        shuffledRoles.JUNGLE[2],
-        shuffledRoles.MIDDLE[2],
-        shuffledRoles.BOTTOM[2],
-        shuffledRoles.UTILITY[2],
-      ],
-      right: [
-        shuffledRoles.TOP[3],
-        shuffledRoles.JUNGLE[3],
-        shuffledRoles.MIDDLE[3],
-        shuffledRoles.BOTTOM[3],
-        shuffledRoles.UTILITY[3],
-      ],
-    },
+    left: [
+      shuffledRoles.TOP[0],
+      shuffledRoles.JUNGLE[0],
+      shuffledRoles.MIDDLE[0],
+      shuffledRoles.BOTTOM[0],
+      shuffledRoles.UTILITY[0],
+    ],
+    right: [
+      shuffledRoles.TOP[1],
+      shuffledRoles.JUNGLE[1],
+      shuffledRoles.MIDDLE[1],
+      shuffledRoles.BOTTOM[1],
+      shuffledRoles.UTILITY[1],
+    ],
   };
 };
 
@@ -189,16 +160,43 @@ export function Visualizer() {
   // Center win rate
   const centerRef = useRef<HTMLDivElement>(null);
 
-  // State for champion objects instead of just names
-  const [currentChampions, setCurrentChampions] = useState(() => {
-    const { current } = getRandomChampions(1);
-    return current;
-  });
+  // First champions should be deterministic to help SSR and hydration
+  const [currentChampions, setCurrentChampions] =
+    useState<ChampionsToVisualize>(() => ({
+      left: [
+        roleChampions.TOP[0],
+        roleChampions.JUNGLE[0],
+        roleChampions.MIDDLE[0],
+        roleChampions.BOTTOM[0],
+        roleChampions.UTILITY[0],
+      ],
+      right: [
+        roleChampions.TOP[1],
+        roleChampions.JUNGLE[1],
+        roleChampions.MIDDLE[1],
+        roleChampions.BOTTOM[1],
+        roleChampions.UTILITY[1],
+      ],
+    }));
 
-  const [nextChampions, setNextChampions] = useState(() => {
-    const { next } = getRandomChampions(1);
-    return next;
-  });
+  const [nextChampions, setNextChampions] = useState<ChampionsToVisualize>(
+    () => ({
+      left: [
+        roleChampions.TOP[2],
+        roleChampions.JUNGLE[2],
+        roleChampions.MIDDLE[2],
+        roleChampions.BOTTOM[2],
+        roleChampions.UTILITY[2],
+      ],
+      right: [
+        roleChampions.TOP[3],
+        roleChampions.JUNGLE[3],
+        roleChampions.MIDDLE[3],
+        roleChampions.BOTTOM[3],
+        roleChampions.UTILITY[3],
+      ],
+    })
+  );
 
   // Animation timing constants
   const BEAM_DELAY = 0.65 as const; // Delay beams until text finishes
@@ -212,7 +210,7 @@ export function Visualizer() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentChampions(nextChampions);
-      const { current: newNext } = getRandomChampions();
+      const newNext = getRandomChampions();
       setNextChampions(newNext);
       setShuffleCount((prev) => prev + 1);
     }, TEXT_UPDATE_INTERVAL);
