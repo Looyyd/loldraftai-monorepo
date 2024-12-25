@@ -51,6 +51,24 @@ const Circle = forwardRef<
 
 Circle.displayName = "Circle";
 
+// Move this outside component but modify to be deterministic for first render(for SSR)
+const getRandomChampions = (seed?: number) => {
+  if (seed !== undefined) {
+    // Use deterministic shuffle for initial server render
+    return {
+      left: champions.slice(0, 5),
+      right: champions.slice(5, 10),
+    };
+  }
+
+  // Use random shuffle for client-side updates
+  const shuffled = [...champions].sort(() => Math.random() - 0.5);
+  return {
+    left: shuffled.slice(0, 5),
+    right: shuffled.slice(5, 10),
+  };
+};
+
 export function Visualizer() {
   const containerRef = useRef<HTMLDivElement>(null);
   // Left side champions
@@ -71,28 +89,26 @@ export function Visualizer() {
   const centerRef = useRef<HTMLDivElement>(null);
 
   // State for champion objects instead of just names
-  const [leftChampions, setLeftChampions] = useState<Champion[]>([]);
-  const [rightChampions, setRightChampions] = useState<Champion[]>([]);
+  const [leftChampions, setLeftChampions] = useState<Champion[]>(() => {
+    const { left } = getRandomChampions(1); // Pass seed for deterministic first render
+    return left;
+  });
+
+  const [rightChampions, setRightChampions] = useState<Champion[]>(() => {
+    const { right } = getRandomChampions(1); // Same seed for consistency
+    return right;
+  });
 
   // Animation timing constants
-  const TEXT_TRANSITION_DURATION = 0.65; // Duration of text animation
-  const BEAM_DELAY = TEXT_TRANSITION_DURATION; // Delay beams until text finishes
-  const BEAM_DURATION = 3; // Duration of beam animation
-  const TEXT_UPDATE_INTERVAL = 3000; // Update every 3 seconds
-
-  // Function to get random champions
-  const getRandomChampions = () => {
-    const shuffled = [...champions].sort(() => Math.random() - 0.5);
-    return {
-      left: shuffled.slice(0, 5),
-      right: shuffled.slice(5, 10),
-    };
-  };
+  const BEAM_DELAY = 0.65 as const; // Delay beams until text finishes
+  const BEAM_DURATION = 1.5 as const; // Duration of beam animation
+  const TEXT_UPDATE_INTERVAL = 1500 as const; // Update every 3 seconds
 
   // Effect for animation
   useEffect(() => {
+    // Only start random updates after initial mount
     const interval = setInterval(() => {
-      const { left, right } = getRandomChampions();
+      const { left, right } = getRandomChampions(); // No seed, use random
       setLeftChampions(left);
       setRightChampions(right);
     }, TEXT_UPDATE_INTERVAL);
