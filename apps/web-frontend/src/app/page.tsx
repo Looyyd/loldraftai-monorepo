@@ -92,8 +92,15 @@ export default function HomePage() {
           <p className="text-lg text-center">
             <span className="brand-text">Draftking</span> is also available as a
             Windows desktop application. The desktop application can connect
-            with the League of Legends client to access live game data and
-            automatically track the draft for you! See the{" "}
+            with the League of Legends client to access{" "}
+            <span className="inline-flex items-center">
+              live{" "}
+              <span className="relative flex h-2 w-2 ml-1">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+              </span>
+            </span>{" "}
+            game data and automatically track the draft for you! See the{" "}
             <Link href="/download" className="text-primary underline">
               download page
             </Link>{" "}

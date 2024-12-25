@@ -280,9 +280,16 @@ function App() {
           <div className="flex w-full p-1 sm:w-auto">
             <div className="flex-1">
               <Button
-                variant={isLiveTracking ? "destructive" : "outline"}
+                variant="outline"
                 onClick={toggleLiveTracking}
+                className="inline-flex items-center gap-2"
               >
+                <span className="relative flex h-2 w-2">
+                  {isLiveTracking && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                  )}
+                  <span className={`relative inline-flex h-2 w-2 rounded-full ${isLiveTracking ? 'bg-red-500' : 'bg-gray-200'}`} />
+                </span>
                 {isLiveTracking ? "Stop Live Tracking" : "Start Live Tracking"}
               </Button>
             </div>
