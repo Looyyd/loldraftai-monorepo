@@ -178,7 +178,7 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
                     addChampion(champion);
                     setSearchTerm("");
                   }}
-                  className="relative cursor-pointer"
+                  className="relative cursor-pointer hover:scale-110 hover:brightness-110"
                 >
                   {Object.entries(favorites).some(([, list]) =>
                     list.includes(champion.id)
