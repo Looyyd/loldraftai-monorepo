@@ -42,11 +42,10 @@ export default function HomePage() {
                 predict the game.
               </p>
               <p className="text-lg mt-8">
-                Instead, the <span className="brand-text">Draftking</span> model
-                learns the full complexity of League of Legends game dynamics.
-                This enables the model to make predictions not just based on
-                lane matchups, but matchups against the entire ennemy team as
-                well as ally champion synergies and anti-synergies, team damage
+                Instead, the <span className="brand-text">Draftking</span> AI
+                model learns and makes predictions based on the full complexity
+                of League of Legends game dynamics, such as in context matchups,
+                ally champion synergies and anti-synergies, team damage
                 distributions, late vs early game dynamics, and so on.
               </p>
               <div className="mt-12 w-full flex justify-center">
@@ -55,7 +54,13 @@ export default function HomePage() {
                 </AnimatedButton>
               </div>
             </div>
-            <Visualizer />
+            <div className="flex flex-col items-center gap-2">
+              <Visualizer />
+              <p className="text-sm text-muted-foreground italic text-center">
+                Draftking AI understands the full complexity of champions, not
+                just statistics!
+              </p>
+            </div>
           </div>
         </section>
 
