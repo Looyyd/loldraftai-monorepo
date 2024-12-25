@@ -4,7 +4,11 @@ import React, { forwardRef, useRef, useEffect, useState } from "react";
 import { cn } from "@draftking/ui/lib/utils";
 import Image from "next/image";
 import { AnimatedBeam } from "@draftking/ui/components/ui/animated-beam";
-import { champions } from "@draftking/ui/lib/champions";
+import {
+  champions,
+  getChampionRoles,
+  sortedPatches,
+} from "@draftking/ui/lib/champions";
 import { motion, AnimatePresence } from "framer-motion";
 import { CpuChipIcon } from "@heroicons/react/24/outline";
 import type { Champion } from "@draftking/ui/lib/types";
@@ -57,32 +61,89 @@ const Circle = forwardRef<
 
 Circle.displayName = "Circle";
 
-// Move this outside component but modify to be deterministic for first render(for SSR)
+// Create role groups once
+const getRoleChampions = (patch: string = sortedPatches[0]) => {
+  const roleChampions: { [key: string]: Champion[] } = {
+    TOP: [],
+    JUNGLE: [],
+    MIDDLE: [],
+    BOTTOM: [],
+    UTILITY: [],
+  };
+
+  // Group champions by their primary role
+  champions.forEach((champion) => {
+    const roles = getChampionRoles(champion.id, patch);
+    if (roles.length > 0) {
+      const primaryRole = roles[0]; // Get most played role
+      roleChampions[primaryRole].push(champion);
+    }
+  });
+
+  return roleChampions;
+};
+
+// Cache the role groups
+const roleChampions = getRoleChampions();
+console.log(roleChampions);
+
+// Get random champions with optional shuffling
 const getRandomChampions = (seed?: number) => {
+  // For the initial render (when seed is provided), use deterministic selection
   if (seed !== undefined) {
-    // Use deterministic shuffle for initial server render
+    const deterministicChampions = champions.slice(0, 20);
     return {
       current: {
-        left: champions.slice(0, 5),
-        right: champions.slice(5, 10),
+        left: deterministicChampions.slice(0, 5),
+        right: deterministicChampions.slice(5, 10),
       },
       next: {
-        left: champions.slice(10, 15),
-        right: champions.slice(15, 20),
+        left: deterministicChampions.slice(10, 15),
+        right: deterministicChampions.slice(15, 20),
       },
     };
   }
 
-  // Use random shuffle for client-side updates
-  const shuffled = [...champions].sort(() => Math.random() - 0.5);
+  // For subsequent renders, shuffle and use role-based selection
+  const shuffledRoles = Object.fromEntries(
+    Object.entries(roleChampions).map(([role, champs]) => [
+      role,
+      [...champs].sort(() => Math.random() - 0.5),
+    ])
+  );
+
   return {
     current: {
-      left: shuffled.slice(0, 5),
-      right: shuffled.slice(5, 10),
+      left: [
+        shuffledRoles.TOP[0],
+        shuffledRoles.JUNGLE[0],
+        shuffledRoles.MIDDLE[0],
+        shuffledRoles.BOTTOM[0],
+        shuffledRoles.UTILITY[0],
+      ],
+      right: [
+        shuffledRoles.TOP[1],
+        shuffledRoles.JUNGLE[1],
+        shuffledRoles.MIDDLE[1],
+        shuffledRoles.BOTTOM[1],
+        shuffledRoles.UTILITY[1],
+      ],
     },
     next: {
-      left: shuffled.slice(10, 15),
-      right: shuffled.slice(15, 20),
+      left: [
+        shuffledRoles.TOP[2],
+        shuffledRoles.JUNGLE[2],
+        shuffledRoles.MIDDLE[2],
+        shuffledRoles.BOTTOM[2],
+        shuffledRoles.UTILITY[2],
+      ],
+      right: [
+        shuffledRoles.TOP[3],
+        shuffledRoles.JUNGLE[3],
+        shuffledRoles.MIDDLE[3],
+        shuffledRoles.BOTTOM[3],
+        shuffledRoles.UTILITY[3],
+      ],
     },
   };
 };
