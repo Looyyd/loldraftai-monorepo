@@ -221,7 +221,7 @@ export function Visualizer() {
   return (
     <>
       <div
-        className="relative flex h-[500px] w-full items-center justify-center overflow-hidden rounded-lg border bg-background p-10"
+        className="relative flex h-[500px] w-full max-w-screen-md items-center justify-center overflow-hidden rounded-lg border bg-background p-10"
         ref={containerRef}
       >
         <div className="flex size-full items-center justify-between">
