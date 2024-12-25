@@ -62,17 +62,51 @@ const getRandomChampions = (seed?: number) => {
   if (seed !== undefined) {
     // Use deterministic shuffle for initial server render
     return {
-      left: champions.slice(0, 5),
-      right: champions.slice(5, 10),
+      current: {
+        left: champions.slice(0, 5),
+        right: champions.slice(5, 10),
+      },
+      next: {
+        left: champions.slice(10, 15),
+        right: champions.slice(15, 20),
+      },
     };
   }
 
   // Use random shuffle for client-side updates
   const shuffled = [...champions].sort(() => Math.random() - 0.5);
   return {
-    left: shuffled.slice(0, 5),
-    right: shuffled.slice(5, 10),
+    current: {
+      left: shuffled.slice(0, 5),
+      right: shuffled.slice(5, 10),
+    },
+    next: {
+      left: shuffled.slice(10, 15),
+      right: shuffled.slice(15, 20),
+    },
   };
+};
+
+// Simple prefetcher component
+const ImagePrefetcher = ({
+  champions,
+}: {
+  champions: { left: Champion[]; right: Champion[] };
+}) => {
+  return (
+    <div className="hidden">
+      {[...champions.left, ...champions.right].map((champion) => (
+        <Image
+          key={champion.id}
+          src={`/icons/champions/${champion.icon}`}
+          alt={champion.name}
+          width={48}
+          height={48}
+          priority
+        />
+      ))}
+    </div>
+  );
 };
 
 export function Visualizer() {
@@ -95,14 +129,14 @@ export function Visualizer() {
   const centerRef = useRef<HTMLDivElement>(null);
 
   // State for champion objects instead of just names
-  const [leftChampions, setLeftChampions] = useState<Champion[]>(() => {
-    const { left } = getRandomChampions(1); // Pass seed for deterministic first render
-    return left;
+  const [currentChampions, setCurrentChampions] = useState(() => {
+    const { current } = getRandomChampions(1);
+    return current;
   });
 
-  const [rightChampions, setRightChampions] = useState<Champion[]>(() => {
-    const { right } = getRandomChampions(1); // Same seed for consistency
-    return right;
+  const [nextChampions, setNextChampions] = useState(() => {
+    const { next } = getRandomChampions(1);
+    return next;
   });
 
   // Animation timing constants
@@ -115,168 +149,174 @@ export function Visualizer() {
 
   // Effect for animation
   useEffect(() => {
-    // Only start random updates after initial mount
     const interval = setInterval(() => {
-      const { left, right } = getRandomChampions(); // No seed, use random
-      setLeftChampions(left);
-      setRightChampions(right);
-      setShuffleCount((prev) => prev + 1); // Increment counter on each shuffle
+      setCurrentChampions(nextChampions);
+      const { current: newNext } = getRandomChampions();
+      setNextChampions(newNext);
+      setShuffleCount((prev) => prev + 1);
     }, TEXT_UPDATE_INTERVAL);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [nextChampions]);
 
   return (
-    <div
-      className="relative flex h-[500px] w-full items-center justify-center overflow-hidden rounded-lg border bg-background p-10"
-      ref={containerRef}
-    >
-      <div className="flex size-full items-center justify-between">
-        {/* Left side champions */}
-        <div className="flex flex-col gap-4">
-          {[left1Ref, left2Ref, left3Ref, left4Ref, left5Ref].map((ref, i) => (
-            <Circle key={i} ref={ref}>
-              {leftChampions[i] && (
-                <AnimatedChampionIcon
-                  champion={leftChampions[i]}
-                  shuffleKey={shuffleCount} // Pass shuffle counter
-                />
-              )}
-            </Circle>
-          ))}
+    <>
+      <div
+        className="relative flex h-[500px] w-full items-center justify-center overflow-hidden rounded-lg border bg-background p-10"
+        ref={containerRef}
+      >
+        <div className="flex size-full items-center justify-between">
+          {/* Left side champions */}
+          <div className="flex flex-col gap-4">
+            {[left1Ref, left2Ref, left3Ref, left4Ref, left5Ref].map(
+              (ref, i) => (
+                <Circle key={i} ref={ref}>
+                  {currentChampions.left[i] && (
+                    <AnimatedChampionIcon
+                      champion={currentChampions.left[i]}
+                      shuffleKey={shuffleCount}
+                    />
+                  )}
+                </Circle>
+              )
+            )}
+          </div>
+
+          {/* Center icon */}
+          <Circle
+            ref={centerRef}
+            className="size-20 bg-background border-[hsl(var(--chart-1))] border-2"
+          >
+            <CpuChipIcon className="size-10 text-[hsl(var(--chart-1))]" />
+          </Circle>
+
+          {/* Right side champions */}
+          <div className="flex flex-col gap-4">
+            {[right1Ref, right2Ref, right3Ref, right4Ref, right5Ref].map(
+              (ref, i) => (
+                <Circle key={i} ref={ref}>
+                  {currentChampions.right[i] && (
+                    <AnimatedChampionIcon
+                      champion={currentChampions.right[i]}
+                      shuffleKey={shuffleCount}
+                    />
+                  )}
+                </Circle>
+              )
+            )}
+          </div>
         </div>
 
-        {/* Center icon */}
-        <Circle
-          ref={centerRef}
-          className="size-20 bg-background border-[hsl(var(--chart-1))] border-2"
-        >
-          <CpuChipIcon className="size-10 text-[hsl(var(--chart-1))]" />
-        </Circle>
+        {/* Left side beams */}
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={left1Ref}
+          toRef={centerRef}
+          curvature={-30}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={left2Ref}
+          toRef={centerRef}
+          curvature={-15}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={left3Ref}
+          toRef={centerRef}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={left4Ref}
+          toRef={centerRef}
+          curvature={15}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={left5Ref}
+          toRef={centerRef}
+          curvature={30}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          startXOffset={8}
+          endXOffset={-8}
+        />
 
-        {/* Right side champions */}
-        <div className="flex flex-col gap-4">
-          {[right1Ref, right2Ref, right3Ref, right4Ref, right5Ref].map(
-            (ref, i) => (
-              <Circle key={i} ref={ref}>
-                {rightChampions[i] && (
-                  <AnimatedChampionIcon
-                    champion={rightChampions[i]}
-                    shuffleKey={shuffleCount} // Pass shuffle counter
-                  />
-                )}
-              </Circle>
-            )
-          )}
-        </div>
+        {/* Right side beams */}
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={right1Ref}
+          toRef={centerRef}
+          curvature={30}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          reverse
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={right2Ref}
+          toRef={centerRef}
+          curvature={15}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          reverse
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={right3Ref}
+          toRef={centerRef}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          reverse
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={right4Ref}
+          toRef={centerRef}
+          curvature={-15}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          reverse
+          startXOffset={8}
+          endXOffset={-8}
+        />
+        <AnimatedBeam
+          containerRef={containerRef}
+          fromRef={right5Ref}
+          toRef={centerRef}
+          curvature={-30}
+          delay={BEAM_DELAY}
+          duration={BEAM_DURATION}
+          reverse
+          startXOffset={8}
+          endXOffset={-8}
+        />
       </div>
 
-      {/* Left side beams */}
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={left1Ref}
-        toRef={centerRef}
-        curvature={-30}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={left2Ref}
-        toRef={centerRef}
-        curvature={-15}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={left3Ref}
-        toRef={centerRef}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={left4Ref}
-        toRef={centerRef}
-        curvature={15}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={left5Ref}
-        toRef={centerRef}
-        curvature={30}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        startXOffset={8}
-        endXOffset={-8}
-      />
-
-      {/* Right side beams */}
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={right1Ref}
-        toRef={centerRef}
-        curvature={30}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        reverse
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={right2Ref}
-        toRef={centerRef}
-        curvature={15}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        reverse
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={right3Ref}
-        toRef={centerRef}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        reverse
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={right4Ref}
-        toRef={centerRef}
-        curvature={-15}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        reverse
-        startXOffset={8}
-        endXOffset={-8}
-      />
-      <AnimatedBeam
-        containerRef={containerRef}
-        fromRef={right5Ref}
-        toRef={centerRef}
-        curvature={-30}
-        delay={BEAM_DELAY}
-        duration={BEAM_DURATION}
-        reverse
-        startXOffset={8}
-        endXOffset={-8}
-      />
-    </div>
+      {/* Simple prefetcher for next batch */}
+      <ImagePrefetcher champions={nextChampions} />
+    </>
   );
 }
