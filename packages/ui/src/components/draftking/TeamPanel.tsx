@@ -80,9 +80,10 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
         "bg-red-900": !is_first_team,
       })}
     >
-      <div className="flex flex-col flex-1">
+      {/*  very small margin bottom to because on hover the icon grows and can be cut off */}
+      <div className="flex flex-col flex-1 mb-1">
         <TeamTitle is_blue_side={is_first_team} />
-        <ul className="flex flex-col flex-1 justify-between">
+        <ul className="flex flex-col flex-1 justify-between mt-1">
           {roles.map((role, index) => {
             const championIndex = index as ChampionIndex;
             const teamMember = team[championIndex];
@@ -93,10 +94,22 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
             return (
               <li key={index}>
                 <div
-                  className={clsx("flex justify-center p-1", {
-                    "border-4 border-yellow-300": isSelected,
-                    "hover:border-2 hover:border-yellow-300": !isSelected,
-                  })}
+                  className={clsx(
+                    "flex justify-center p-1",
+                    // Base styles
+                    "bg-opacity-0 rounded-lg",
+                    // Selected state using team colors
+                    {
+                      "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]": isSelected,
+                      // Hover state
+                      "hover:bg-white/5 hover:scale-110": !isSelected,
+                    },
+                    // Team-specific colors when selected
+                    {
+                      "from-blue-500/20 to-blue-600/10 shadow-blue-500": isSelected && is_first_team,
+                      "from-red-500/20 to-red-600/10 shadow-red-500": isSelected && !is_first_team,
+                    }
+                  )}
                   onClick={() => handleSpotClick(championIndex)}
                 >
                   <div
