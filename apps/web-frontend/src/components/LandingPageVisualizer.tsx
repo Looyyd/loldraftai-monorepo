@@ -24,10 +24,10 @@ const AnimatedChampionIcon = ({
   <AnimatePresence mode="wait">
     <motion.div
       key={`${champion.id}-${shuffleKey}`}
-      initial={{ opacity: 0, scale: 0.8 }}
+      initial={{ opacity: 0, scale: 0.9 }} // Reduced scale change
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8 }}
-      transition={{ duration: 0.3, ease: "easeInOut" }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.2, ease: "easeOut" }} // Faster, simpler easing
       className="relative size-12"
     >
       <Image
@@ -200,8 +200,8 @@ export function Visualizer() {
 
   // Animation timing constants
   const BEAM_DELAY = 0.65 as const; // Delay beams until text finishes
-  const BEAM_DURATION = 1.5 as const; // Duration of beam animation
-  const TEXT_UPDATE_INTERVAL = 1500 as const; // Update every 3 seconds
+  const BEAM_DURATION = 2 as const; // Duration of beam animation
+  const TEXT_UPDATE_INTERVAL = 2000 as const; // Update every 3 seconds
 
   // Add a shuffle counter
   const [shuffleCount, setShuffleCount] = useState(0);
