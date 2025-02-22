@@ -19,25 +19,21 @@ def get_optimizer_grouped_parameters(
 ) -> list[dict]:
     # Get all parameters that require gradients
     param_dict = {pn: p for pn, p in model.named_parameters() if p.requires_grad}
-
+    
     # Separate parameters into decay and no-decay groups
     decay_params = []
     nodecay_params = []
-
+    
     for name, param in param_dict.items():
         # No weight decay for:
-        # 1. All embedding layers (champion_embedding, token_type_embedding if used)
+        # 1. All embedding layers (embeddings.*.weight and champion_embedding.weight)
         # 2. All bias terms
-        # 3. All normalization layers (BatchNorm)
-        # 4. Positional embeddings and CLS token
+        # 3. All normalization layers
         # source: https://github.com/karpathy/minGPT/pull/24#issuecomment-679316025
-        if (
-            "embedding" in name
-            or "bias" in name
-            or "norm" in name
-            or "pos_embedding" in name
-            or "cls_token" in name
-        ):
+        if ('embeddings.' in name or 
+            'champion_embedding.' in name or 
+            'bias' in name or 
+            'norm' in name):
             nodecay_params.append(param)
         else:
             decay_params.append(param)

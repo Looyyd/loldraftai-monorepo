@@ -7,25 +7,18 @@ from utils.match_prediction.masking_strategies import MASKING_STRATEGIES
 class TrainingConfig:
     def __init__(self):
         # Default values
-        self.num_epochs = 20  # Reduced from 50 for faster iteration
-
-        self.embed_dim = 64  # Reduced from 128 for efficiency
-
+        self.num_epochs = 50
+        self.embed_dim = 128  # 128 seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
         # 256: https://wandb.ai/loyd-team/draftking/runs/6w221kxa?nw=nwuserloyd
         # 1024: https://wandb.ai/loyd-team/draftking/runs/5eg66qlp?nw=nwuserloyd
-        self.num_transformer_layers = 3  # Added: deeper model (new parameter)
-        self.num_attention_heads = 4  # Added: adjusted for embed_dim=64
-        self.dim_feedforward = 128  # Added: reduced from implied 256
-        self.hidden_dims = [128, 64]  # Added: MLP dims aligned with embed_dim
 
-        self.dropout = 0.05
+        self.dropout = 0.1
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
-        self.weight_decay = 0.001
-        self.learning_rate = 5e-5  # Increased from 1e-3 to match old models
-        self.max_grad_norm = 1.0  # Unchanged, prevents exploding gradients
-        self.accumulation_steps = 1  # Increased from 1 to mimic batch size 4096
-
+        self.weight_decay = 0.01
+        self.learning_rate = 1e-3
+        self.max_grad_norm = 1.0
+        self.accumulation_steps = 1
         self.masking_strategy = {
             "name": "strategic",
             "params": {"decay_factor": 2.0},
@@ -37,12 +30,10 @@ class TrainingConfig:
 
         # Add OneCycleLR parameters
         self.use_one_cycle_lr = True
-        self.max_lr = 5e-5  
-        self.pct_start = 0.2  # Adjusted to 20% for slightly longer warmup
-        self.div_factor = 10.0  # Unchanged, initial_lr = max_lr / 10
-        self.final_div_factor = (
-            1e4  # Unchanged, final_lr = max_lr / (div_factor * final_div_factor)
-        )
+        self.max_lr = 3e-4
+        self.pct_start = 0.1  # 10% of training for warmup
+        self.div_factor = 10.0  # initial_lr = max_lr/div_factor
+        self.final_div_factor = 1e4  # final_lr = max_lr/(div_factor * final_div_factor)
 
         # Add new configuration parameters
         self.validation_interval = 1  # Run validation every N epochs
