@@ -8,6 +8,7 @@ class TrainingConfig:
     def __init__(self):
         # Default values
         self.num_epochs = 25
+        self.hidden_dims = [256, 128]
         self.embed_dim = 128  # seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
         # 256: https://wandb.ai/loyd-team/draftking/runs/6w221kxa?nw=nwuserloyd

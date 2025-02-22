@@ -11,6 +11,7 @@ from utils.match_prediction.column_definitions import (
     POSITIONS,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType
+from utils.match_prediction.config import TrainingConfig
 
 
 class SimpleMatchModel(nn.Module):
@@ -18,9 +19,9 @@ class SimpleMatchModel(nn.Module):
         self,
         num_categories,
         num_champions,
-        embed_dim=64,
-        hidden_dims=[256, 128],
-        dropout=0.1,
+        embed_dim,
+        hidden_dims,
+        dropout,
     ):
         super(SimpleMatchModel, self).__init__()
 
@@ -141,7 +142,9 @@ class SimpleMatchModel(nn.Module):
 
 
 if __name__ == "__main__":
-    # Example usage
+    # Load configuration
+    config = TrainingConfig()
+
     # Determine the number of unique categories from label encoders
     with open(ENCODERS_PATH, "rb") as f:
         label_encoders = pickle.load(f)
@@ -150,14 +153,11 @@ if __name__ == "__main__":
     }
     num_champions = 200
 
-    embed_dim = 64
-    num_heads = 8
-    num_transformer_layers = 2
-
     model = SimpleMatchModel(
         num_categories=num_categories,
         num_champions=num_champions,
-        embed_dim=embed_dim,
+        embed_dim=config.embed_dim,
+        dropout=config.dropout,
     )
     # Print model architecture
     print(model)

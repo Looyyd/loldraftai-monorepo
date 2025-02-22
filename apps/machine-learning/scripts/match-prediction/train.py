@@ -131,6 +131,7 @@ def init_model(
         num_categories=num_categories,
         num_champions=num_champions,
         embed_dim=config.embed_dim,
+        hidden_dims=config.hidden_dims,
         dropout=config.dropout,
     )
 
