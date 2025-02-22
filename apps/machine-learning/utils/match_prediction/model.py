@@ -21,7 +21,7 @@ class SimpleMatchModel(nn.Module):
         embed_dim=64,
         hidden_dims=[256, 128],
         dropout=0.1,
-        num_attention_heads=8,
+        num_attention_heads=4,
     ):
         super(SimpleMatchModel, self).__init__()
 
