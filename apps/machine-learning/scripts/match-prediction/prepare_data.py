@@ -24,6 +24,9 @@ from utils.match_prediction.task_definitions import TASKS, TaskType
 from typing import List, Dict
 from collections import defaultdict
 
+# Constants
+NUM_RECENT_PATCHES = 5  # Number of most recent patches to use for training
+
 
 def load_data(file_path):
     return pd.read_parquet(file_path)
@@ -100,8 +103,8 @@ def compute_stats(data_files):
 def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
     """
     Analyze all files to create a mapping for patch numbers.
-    Takes the 5 most recent patches, mapping any patch with <200k games to the previous patch.
-    Returns a dictionary mapping original patch numbers to normalized ones (1-5).
+    Takes the NUM_RECENT_PATCHES most recent patches, mapping any patch with <200k games to the previous patch.
+    Returns a dictionary mapping original patch numbers to normalized ones (1-NUM_RECENT_PATCHES).
     """
     patch_counts = defaultdict(int)
 
@@ -114,17 +117,19 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
 
     all_patches = sorted(patch_counts.keys())  # All patches in chronological order
 
-    # Get the last 5 patches
-    recent_patches = all_patches[-5:]
-    if len(recent_patches) < 5:
-        raise ValueError("Not enough patches in the dataset!")
+    # Get the last NUM_RECENT_PATCHES patches
+    recent_patches = all_patches[-NUM_RECENT_PATCHES:]
+    if len(recent_patches) < NUM_RECENT_PATCHES:
+        raise ValueError(
+            f"Not enough patches in the dataset! Need at least {NUM_RECENT_PATCHES} patches."
+        )
 
     # Create mapping, handling low-data patches
     patch_mapping = {}
     normalized_value = 1
     previous_significant_patch = None
 
-    # Process patches from oldest to newest of the last 5
+    # Process patches from oldest to newest of the last NUM_RECENT_PATCHES
     for patch in recent_patches:
         if patch_counts[patch] > 200000:
             # This is a significant patch
@@ -135,11 +140,11 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
             # Map to previous significant patch
             patch_mapping[patch] = patch_mapping[previous_significant_patch]
         else:
-            # First patch has low data, shouldn't happen with 5 patches
+            # First patch has low data, shouldn't happen with NUM_RECENT_PATCHES patches
             raise ValueError(f"First patch {patch} has insufficient data!")
 
     # Log the mapping for transparency
-    print("\nPatch mapping (last 5 patches):")
+    print("\nPatch mapping (last NUM_RECENT_PATCHES patches):")
     for patch in sorted(patch_mapping.keys()):
         mapped_value = patch_mapping[patch]
         print(f"Patch {patch:.2f} -> {mapped_value} ({patch_counts[patch]} games)")
@@ -205,7 +210,7 @@ def prepare_data(
         if len(df) < 10:  # Arbitrary minimum size, adjust as needed
             # For very small datasets, use a fixed split
             df_train = df.iloc[:-1]  # All but last row
-            df_test = df.iloc[-1:]   # Last row
+            df_test = df.iloc[-1:]  # Last row
         else:
             df_train, df_test = train_test_split(df, test_size=0.1, random_state=42)
 
@@ -231,7 +236,7 @@ def prepare_data(
 def add_computed_columns(input_files: List[str], output_dir: str) -> List[str]:
     """
     Add computed columns to parquet files and save them to a new directory.
-    Only includes games from the last 5 patches.
+    Only includes games from the last NUM_RECENT_PATCHES patches.
     Returns the list of new file paths.
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -250,7 +255,7 @@ def add_computed_columns(input_files: List[str], output_dir: str) -> List[str]:
         # Calculate raw patch numbers
         raw_patches = df["gameVersionMajorPatch"] * 50 + df["gameVersionMinorPatch"]
 
-        # Filter for games only in the patch mapping (last 5 patches)
+        # Filter for games only in the patch mapping (last NUM_RECENT_PATCHES patches)
         df["numerical_patch"] = raw_patches.map(lambda x: patch_mapping.get(x, 0))
         df = df[df["numerical_patch"] > 0]  # Remove games from old patches
 
