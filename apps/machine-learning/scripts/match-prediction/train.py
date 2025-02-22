@@ -248,7 +248,7 @@ def validate(
     model.eval()
     enabled_tasks = get_enabled_tasks(config)  # Get only enabled tasks
     metric_accumulators = {
-        task_name: torch.zeros(2).to(device) for task_name in enabled_tasks.keys()
+        task_name: torch.zeros(2).cpu() for task_name in enabled_tasks.keys()
     }
     num_samples = 0
     total_loss = 0.0
@@ -326,11 +326,11 @@ def update_metric_accumulators(
         if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
             probs = torch.sigmoid(task_output)
             preds = (probs >= 0.5).float()
-            correct = (preds == task_label).float().sum()
+            correct = (preds == task_label).float().sum().cpu()
             metric_accumulators[task_name][0] += correct
             metric_accumulators[task_name][1] += batch_size
         elif task_def.task_type == TaskType.REGRESSION:
-            mse = nn.functional.mse_loss(task_output, task_label, reduction="sum")
+            mse = nn.functional.mse_loss(task_output, task_label, reduction="sum").cpu()
             metric_accumulators[task_name][0] += mse
             metric_accumulators[task_name][1] += batch_size
 
