@@ -45,8 +45,7 @@ DEVICE = get_best_device()
 
 # Batch sizes
 if DEVICE.type == "mps":
-    #TRAIN_BATCH_SIZE = 2048 * 2  # Used during training
-    TRAIN_BATCH_SIZE = 2048 * 1  # Used during training
+    TRAIN_BATCH_SIZE = 2048 * 2  # Used during training
 else:
     # cuda/runpod config
     TRAIN_BATCH_SIZE = 2048 * 2  # Used during training

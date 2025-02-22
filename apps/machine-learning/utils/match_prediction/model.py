@@ -2,265 +2,201 @@
 
 import torch
 import torch.nn as nn
-from typing import Dict, List
+import pickle
+
+from utils.match_prediction import ENCODERS_PATH
 from utils.match_prediction.column_definitions import (
     NUMERICAL_COLUMNS,
+    CATEGORICAL_COLUMNS,
+    POSITIONS,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType
 
 
-#######################################
-# Model Definition
-#######################################
 class SimpleMatchModel(nn.Module):
-    """
-    A modular Transformer-based model that treats each champion
-    + each numerical column as its own token in the sequence.
-
-    Architecture:
-        1) champion_ids -> Embedding -> shape: [batch_size, #champs, embed_dim]
-        2) numerical columns -> separate linear projections -> shape: [batch_size, 1, embed_dim] each
-           -> then concatenated into shape: [batch_size, #numerical_cols, embed_dim]
-        3) Concatenate all tokens into shape: [batch_size, total_tokens, embed_dim]
-           (total_tokens = #champs + #numerical_cols)
-        4) Optional token-type embedding (champ vs numeric)
-        5) Positional embedding for each token index
-        6) Transformer encoder
-        7) Pool (e.g. mean) over the sequence dimension
-        8) MLP
-        9) Task heads
-    """
-
     def __init__(
         self,
-        num_champions: int,
-        embed_dim: int = 128,
-        hidden_dims: List[int] = [256, 128],
-        dropout: float = 0.1,
-        num_attention_heads: int = 8,
-        num_transformer_layers: int = 2,
-        dim_feedforward: int = 256,
-        use_token_types: bool = True,
-        tasks: Dict[str, Dict] = None,
+        num_categories,
+        num_champions,
+        embed_dim=64,
+        hidden_dims=[256, 128],
+        dropout=0.1,
+        num_attention_heads=8,
     ):
-        """
-        :param num_champions:       Number of unique champion IDs.
-        :param embed_dim:           Dimensionality of each embedding token.
-        :param hidden_dims:         List of hidden layer sizes for the final MLP.
-        :param dropout:             Dropout rate in Transformer & MLP.
-        :param num_attention_heads: # of attention heads in Transformer.
-        :param num_transformer_layers: # of layers in Transformer.
-        :param dim_feedforward:     Feedforward dim in Transformer encoder.
-        :param use_token_types:     Whether to include token-type embeddings.
-        :param tasks:               Dict of task_name -> { "task_type": TaskType }, used for output heads.
-        """
-        super().__init__()
+        super(SimpleMatchModel, self).__init__()
 
+        # Store dimensions for debugging
         self.embed_dim = embed_dim
-        self.use_token_types = use_token_types
-        self.tasks = tasks if tasks is not None else TASKS
 
-        ###################################
-        # Champion Embeddings
-        ###################################
+        # Embeddings for categorical features
+        self.embeddings = nn.ModuleDict()
+        for col in CATEGORICAL_COLUMNS:
+            self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
+
+        # Champion embeddings
         self.champion_embedding = nn.Embedding(num_champions, embed_dim)
 
-        ###################################
-        # Numerical Feature Projections
-        #
-        # For modularity, we store a separate Linear layer for each numerical column.
-        # Each linear takes a single scalar [batch_size, 1] -> [batch_size, embed_dim].
-        # Then in forward(), we will .unsqueeze(1) to make it a token.
-        ###################################
-        self.numerical_embeddings = nn.ModuleDict()
-        for col in NUMERICAL_COLUMNS:
-            self.numerical_embeddings[col] = nn.Linear(1, embed_dim)
+        # Project numerical features
+        self.numerical_projection = (
+            nn.Linear(len(NUMERICAL_COLUMNS), embed_dim) if NUMERICAL_COLUMNS else None
+        )
 
-        ###################################
-        # Token-Type Embeddings (Optional)
-        ###################################
-        if self.use_token_types:
-            # We'll use:
-            #   type 0 => champion tokens
-            #   type 1 => numerical tokens
-            self.token_type_embedding = nn.Embedding(2, embed_dim)
-        else:
-            self.token_type_embedding = None
-
-        ###################################
-        # Positional Embeddings
-        # Total tokens = #champion_ids (e.g., 10) + len(NUMERICAL_COLUMNS)
-        ###################################
-        self.num_champion_tokens = 10  # or however many champion slots you have
-        self.num_numerical_tokens = len(NUMERICAL_COLUMNS)
-        self.total_tokens = self.num_champion_tokens + self.num_numerical_tokens
-        self.pos_embedding = nn.Parameter(torch.randn(self.total_tokens, embed_dim))
-
-        ###################################
-        # Transformer Encoder
-        ###################################
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim,
-            nhead=num_attention_heads,
-            dim_feedforward=dim_feedforward,
+        # Champion attention mechanism
+        self.champion_attention = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=num_attention_heads,
             dropout=dropout,
             batch_first=True,
-            activation="gelu",
         )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_transformer_layers
-        )
+        self.champion_attn_norm = nn.LayerNorm(embed_dim)
 
-        ###################################
-        # MLP (applied after pooling)
-        ###################################
+        # Calculate total input dimension for MLP
+        num_categorical = len(CATEGORICAL_COLUMNS)  # Categorical features
+        num_champions = len(POSITIONS) * 2  # Champions from both teams
+        num_numerical_projections = (
+            1 if NUMERICAL_COLUMNS else 0
+        )  # Projected numerical features
+        total_embed_features = (
+            num_categorical + num_champions + num_numerical_projections
+        )
+        mlp_input_dim = total_embed_features * embed_dim
+
+        print(f"Model dimensions:")
+        print(f"- Categorical features: {num_categorical}")
+        print(f"- Champion positions: {num_champions}")
+        print(f"- Numerical features projection: {num_numerical_projections}")
+        print(f"- Total embedded features: {total_embed_features}")
+        print(f"- Embedding dimension: {embed_dim}")
+        print(f"- MLP input dimension: {mlp_input_dim}")
+
+        # MLP layers
         layers = []
-        prev_dim = embed_dim
-        for hd in hidden_dims:
-            layers.append(nn.Linear(prev_dim, hd, bias=False))
-            layers.append(nn.BatchNorm1d(hd))
-            layers.append(nn.GELU())
-            layers.append(nn.Dropout(dropout))
-            prev_dim = hd
+        prev_dim = mlp_input_dim
+
+        for hidden_dim in hidden_dims:
+            layers.extend(
+                [
+                    nn.Linear(prev_dim, hidden_dim, bias=False),
+                    nn.BatchNorm1d(hidden_dim),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                ]
+            )
+            prev_dim = hidden_dim
+
         self.mlp = nn.Sequential(*layers)
 
-        ###################################
-        # Output Heads (per task)
-        ###################################
+        # Output layers for each task
         self.output_layers = nn.ModuleDict()
-        for task_name, task_info in self.tasks.items():
-            task_type = task_info.task_type
-            if task_type in [TaskType.BINARY_CLASSIFICATION, TaskType.REGRESSION]:
+        for task_name, task_def in TASKS.items():
+            if task_def.task_type in [
+                TaskType.BINARY_CLASSIFICATION,
+                TaskType.REGRESSION,
+            ]:
                 self.output_layers[task_name] = nn.Linear(hidden_dims[-1], 1)
 
-        print("ContextTransformerModel initialized with:")
-        print(f" - #Champion tokens: {self.num_champion_tokens}")
-        print(
-            f" - #Numerical tokens: {self.num_numerical_tokens} ({NUMERICAL_COLUMNS})"
-        )
-        print(f" - embed_dim: {embed_dim}, hidden_dims: {hidden_dims}")
-        print(f" - num_transformer_layers: {num_transformer_layers}")
-        print(f" - num_attention_heads: {num_attention_heads}")
-        print(f" - use_token_types: {use_token_types}")
+    def forward(self, features):
+        batch_size = features["champion_ids"].size(0)
+        embeddings_list = []
 
-    def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """
-        Expects `features` to contain:
-          features["champion_ids"] -> LongTensor [batch_size, self.num_champion_tokens]
-          features[col] for each col in NUMERICAL_COLUMNS -> FloatTensor [batch_size]
-        """
-        batch_size = features["champion_ids"].shape[0]
+        # Process categorical features
+        for col in CATEGORICAL_COLUMNS:
+            embed = self.embeddings[col](features[col])  # [batch_size, embed_dim]
+            embeddings_list.append(embed)
 
-        ###################################
-        # 1) Champion Tokens
-        ###################################
-        # shape: [batch_size, num_champion_tokens, embed_dim]
-        champ_embeds = self.champion_embedding(features["champion_ids"])
+        # Process champion features with attention
+        champion_ids = features["champion_ids"]  # [batch_size, num_champions]
+        champion_embeds = self.champion_embedding(
+            champion_ids
+        )  # [batch_size, num_champions, embed_dim]
 
-        ###################################
-        # 2) Numerical Tokens
-        ###################################
-        # For each numerical column, produce a single token.
-        numeric_tokens = []
-        for col in NUMERICAL_COLUMNS:
-            # [batch_size] -> [batch_size, 1]
-            vals = features[col].unsqueeze(-1)
-            # [batch_size, embed_dim]
-            embedded = self.numerical_embeddings[col](vals)
-            # Convert to a "token" dimension: [batch_size, 1, embed_dim]
-            embedded = embedded.unsqueeze(1)
-            numeric_tokens.append(embedded)
+        # Apply self-attention with residual connection
+        attn_output, _ = self.champion_attention(
+            champion_embeds, champion_embeds, champion_embeds
+        )  # [batch_size, num_champions, embed_dim]
+        champion_embeds = champion_embeds + attn_output  # Residual connection
+        champion_embeds = self.champion_attn_norm(champion_embeds)
 
-        # Concatenate champion tokens + numeric tokens
-        # shape => [batch_size, total_tokens, embed_dim]
-        # total_tokens = 10 (champs) + len(NUMERICAL_COLUMNS)
-        tokens = torch.cat([champ_embeds] + numeric_tokens, dim=1)
+        # Flatten and continue as before
+        champion_features = champion_embeds.view(batch_size, -1)
+        embeddings_list.append(champion_features)
 
-        ###################################
-        # 3) Token-Type Embeddings (optional)
-        ###################################
-        if self.use_token_types:
-            # 0 for champion tokens, 1 for all numerical tokens
-            token_type_ids = (
-                torch.tensor(
-                    [0] * self.num_champion_tokens + [1] * self.num_numerical_tokens,
-                    device=tokens.device,
-                )
-                .unsqueeze(0)
-                .expand(batch_size, self.total_tokens)
-            )  # [batch_size, total_tokens]
-            type_embeds = self.token_type_embedding(
-                token_type_ids
-            )  # [batch_size, total_tokens, embed_dim]
-            tokens = tokens + type_embeds
+        # Process numerical features if they exist
+        if self.numerical_projection is not None and NUMERICAL_COLUMNS:
+            numerical_features = torch.stack(
+                [features[col] for col in NUMERICAL_COLUMNS], dim=1
+            )
+            numerical_embed = self.numerical_projection(
+                numerical_features
+            )  # [batch_size, embed_dim]
+            embeddings_list.append(numerical_embed)
 
-        ###################################
-        # 4) Positional Embeddings
-        #    shape of self.pos_embedding => [total_tokens, embed_dim]
-        ###################################
-        pos_emb = self.pos_embedding.unsqueeze(0).expand(
-            batch_size, self.total_tokens, self.embed_dim
-        )
-        tokens = tokens + pos_emb
+        # Concatenate all features
+        combined_features = torch.cat(embeddings_list, dim=1)
 
-        ###################################
-        # 5) Transformer Encoder
-        ###################################
-        encoded = self.transformer_encoder(
-            tokens
-        )  # [batch_size, total_tokens, embed_dim]
+        # Debug print dimensions
+        if combined_features.shape[1] != self.mlp[0].weight.shape[1]:
+            print(f"\nDimension mismatch!")
+            print(f"Combined features shape: {combined_features.shape}")
+            print(f"First MLP layer input dim: {self.mlp[0].weight.shape[1]}")
+            print(f"First MLP layer weight shape: {self.mlp[0].weight.shape}")
+            for i, embedding in enumerate(embeddings_list):
+                print(f"Embedding {i} shape: {embedding.shape}")
 
-        ###################################
-        # 6) Pooling (Mean pool)
-        ###################################
-        # shape => [batch_size, embed_dim]
-        pooled = encoded.mean(dim=1)
+        # Pass through MLP
+        x = self.mlp(combined_features)
 
-        ###################################
-        # 7) MLP
-        ###################################
-        x = self.mlp(pooled)  # [batch_size, hidden_dims[-1]]
-
-        ###################################
-        # 8) Output Heads
-        ###################################
+        # Generate outputs for each task
         outputs = {}
-        for task_name, layer in self.output_layers.items():
-            logits = layer(x).squeeze(-1)  # [batch_size]
-            outputs[task_name] = logits
+        for task_name, output_layer in self.output_layers.items():
+            outputs[task_name] = output_layer(x).squeeze(-1)
 
         return outputs
 
 
-#######################################
-# Example Usage
-#######################################
 if __name__ == "__main__":
-    # Example: 200 champions
-    model = SimpleMatchModel(
-        num_champions=200,
-        embed_dim=48,
-        hidden_dims=[96, 48],
-        dropout=0.1,
-        num_attention_heads=4,
-        num_transformer_layers=2,
-        dim_feedforward=128,
-        use_token_types=True,
-        tasks=TASKS,
-    )
-
-    # Create a dummy batch
-    batch_size = 8
-    feats = {
-        "champion_ids": torch.randint(0, 200, (batch_size, 10)),
-        "numerical_patch": torch.rand(batch_size),  # e.g. patch number
-        "numerical_elo": torch.randint(800, 3000, (batch_size,)).float(),
+    # Example usage
+    # Determine the number of unique categories from label encoders
+    with open(ENCODERS_PATH, "rb") as f:
+        label_encoders = pickle.load(f)
+    num_categories = {
+        col: len(label_encoders[col].classes_) for col in CATEGORICAL_COLUMNS
     }
+    num_champions = 200
 
-    out = model(feats)
-    for k, v in out.items():
-        print(f"{k}: {v.shape}")
+    embed_dim = 64
+    num_heads = 8
+    num_transformer_layers = 2
 
-    # Print total trainable parameters
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Trainable parameters: {total_params:,}")
+    model = SimpleMatchModel(
+        num_categories=num_categories,
+        num_champions=num_champions,
+        embed_dim=embed_dim,
+    )
+    # Print model architecture
+    print(model)
+
+    # Calculate and print model size
+    param_size = 0
+    for param in model.parameters():
+        param_size += param.nelement() * param.element_size()
+    buffer_size = 0
+    for buffer in model.buffers():
+        buffer_size += buffer.nelement() * buffer.element_size()
+
+    size_all_mb = (param_size + buffer_size) / 1024**2
+    print(f"\nModel Size: {size_all_mb:.3f} MB")
+
+    # Print sizes of individual layers
+    print("\nLayer Sizes:")
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.Embedding, nn.Linear)):
+            layer_size = (
+                sum(p.nelement() * p.element_size() for p in module.parameters())
+                / 1024**2
+            )
+            print(f"{name}: {layer_size:.3f} MB")
+
+    # Count trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\nTrainable parameters: {trainable_params:,}")

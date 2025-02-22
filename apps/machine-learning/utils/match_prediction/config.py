@@ -7,8 +7,8 @@ from utils.match_prediction.masking_strategies import MASKING_STRATEGIES
 class TrainingConfig:
     def __init__(self):
         # Default values
-        self.num_epochs = 50
-        self.embed_dim = 128  # 128 seems optimal see experiments:
+        self.num_epochs = 35
+        self.embed_dim = 128  # seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
         # 256: https://wandb.ai/loyd-team/draftking/runs/6w221kxa?nw=nwuserloyd
         # 1024: https://wandb.ai/loyd-team/draftking/runs/5eg66qlp?nw=nwuserloyd
@@ -16,7 +16,7 @@ class TrainingConfig:
         self.dropout = 0.1
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
         self.weight_decay = 0.01
-        self.learning_rate = 1e-3
+        self.learning_rate = 5e-2
         self.max_grad_norm = 1.0
         self.accumulation_steps = 1
         self.masking_strategy = {
@@ -30,9 +30,9 @@ class TrainingConfig:
 
         # Add OneCycleLR parameters
         self.use_one_cycle_lr = True
-        self.max_lr = 3e-4
-        self.pct_start = 0.1  # 10% of training for warmup
-        self.div_factor = 10.0  # initial_lr = max_lr/div_factor
+        self.max_lr = 2e-3
+        self.pct_start = 0.3  # 30% of training for warmup
+        self.div_factor = 25.0  # initial_lr = max_lr/div_factor
         self.final_div_factor = 1e4  # final_lr = max_lr/(div_factor * final_div_factor)
 
         # Add new configuration parameters

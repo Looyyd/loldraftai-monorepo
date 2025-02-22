@@ -24,12 +24,6 @@ from utils.match_prediction.task_definitions import TASKS, TaskType
 from typing import List, Dict
 from collections import defaultdict
 
-# Configuration parameters
-NUM_RECENT_PATCHES = 10  # Number of most recent patches to use
-MIN_GAMES_PER_PATCH = (
-    200000  # Minimum number of games required for a patch to be considered significant
-)
-
 
 def load_data(file_path):
     return pd.read_parquet(file_path)
@@ -106,8 +100,8 @@ def compute_stats(data_files):
 def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
     """
     Analyze all files to create a mapping for patch numbers.
-    Takes the NUM_RECENT_PATCHES most recent patches, mapping any patch with <MIN_GAMES_PER_PATCH games to the previous patch.
-    Returns a dictionary mapping original patch numbers to normalized ones (1-NUM_RECENT_PATCHES).
+    Takes the 5 most recent patches, mapping any patch with <200k games to the previous patch.
+    Returns a dictionary mapping original patch numbers to normalized ones (1-5).
     """
     patch_counts = defaultdict(int)
 
@@ -120,21 +114,19 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
 
     all_patches = sorted(patch_counts.keys())  # All patches in chronological order
 
-    # Get the last N patches
-    recent_patches = all_patches[-NUM_RECENT_PATCHES:]
-    if len(recent_patches) < NUM_RECENT_PATCHES:
-        raise ValueError(
-            f"Not enough patches in the dataset! Need at least {NUM_RECENT_PATCHES} patches."
-        )
+    # Get the last 5 patches
+    recent_patches = all_patches[-5:]
+    if len(recent_patches) < 5:
+        raise ValueError("Not enough patches in the dataset!")
 
     # Create mapping, handling low-data patches
     patch_mapping = {}
     normalized_value = 1
     previous_significant_patch = None
 
-    # Process patches from oldest to newest of the last N patches
+    # Process patches from oldest to newest of the last 5
     for patch in recent_patches:
-        if patch_counts[patch] > MIN_GAMES_PER_PATCH:
+        if patch_counts[patch] > 200000:
             # This is a significant patch
             patch_mapping[patch] = normalized_value
             previous_significant_patch = patch
@@ -143,11 +135,11 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
             # Map to previous significant patch
             patch_mapping[patch] = patch_mapping[previous_significant_patch]
         else:
-            # First patch has low data, shouldn't happen with NUM_RECENT_PATCHES patches
+            # First patch has low data, shouldn't happen with 5 patches
             raise ValueError(f"First patch {patch} has insufficient data!")
 
     # Log the mapping for transparency
-    print(f"\nPatch mapping (last {NUM_RECENT_PATCHES} patches):")
+    print("\nPatch mapping (last 5 patches):")
     for patch in sorted(patch_mapping.keys()):
         mapped_value = patch_mapping[patch]
         print(f"Patch {patch:.2f} -> {mapped_value} ({patch_counts[patch]} games)")
@@ -213,7 +205,7 @@ def prepare_data(
         if len(df) < 10:  # Arbitrary minimum size, adjust as needed
             # For very small datasets, use a fixed split
             df_train = df.iloc[:-1]  # All but last row
-            df_test = df.iloc[-1:]  # Last row
+            df_test = df.iloc[-1:]   # Last row
         else:
             df_train, df_test = train_test_split(df, test_size=0.1, random_state=42)
 
