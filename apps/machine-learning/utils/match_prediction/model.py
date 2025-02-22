@@ -21,7 +21,6 @@ class SimpleMatchModel(nn.Module):
         embed_dim=64,
         hidden_dims=[256, 128],
         dropout=0.1,
-        num_attention_heads=4,
     ):
         super(SimpleMatchModel, self).__init__()
 
@@ -40,15 +39,6 @@ class SimpleMatchModel(nn.Module):
         self.numerical_projection = (
             nn.Linear(len(NUMERICAL_COLUMNS), embed_dim) if NUMERICAL_COLUMNS else None
         )
-
-        # Champion attention mechanism
-        self.champion_attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_attention_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.champion_attn_norm = nn.LayerNorm(embed_dim)
 
         # Calculate total input dimension for MLP
         num_categorical = len(CATEGORICAL_COLUMNS)  # Categorical features
@@ -104,21 +94,17 @@ class SimpleMatchModel(nn.Module):
             embed = self.embeddings[col](features[col])  # [batch_size, embed_dim]
             embeddings_list.append(embed)
 
-        # Process champion features with attention
+        # Process champion features
         champion_ids = features["champion_ids"]  # [batch_size, num_champions]
         champion_embeds = self.champion_embedding(
             champion_ids
         )  # [batch_size, num_champions, embed_dim]
 
-        # Apply self-attention with residual connection
-        attn_output, _ = self.champion_attention(
-            champion_embeds, champion_embeds, champion_embeds
-        )  # [batch_size, num_champions, embed_dim]
-        champion_embeds = champion_embeds + attn_output  # Residual connection
-        champion_embeds = self.champion_attn_norm(champion_embeds)
+        # Combine champion and champion other champion features(empty for now because we don't have role percentages or other features)
+        champion_features = champion_embeds
 
-        # Flatten and continue as before
-        champion_features = champion_embeds.view(batch_size, -1)
+        # Reshape champion features to [batch_size, num_champions * embed_dim]
+        champion_features = champion_features.view(batch_size, -1)
         embeddings_list.append(champion_features)
 
         # Process numerical features if they exist
