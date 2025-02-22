@@ -1,23 +1,36 @@
 import Link from "next/link";
 import CloudFlareImage from "@/components/CloudFlareImage";
+import { Button } from "@draftking/ui/components/ui/button";
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen w-full flex-col items-center bg-gradient-to-b from-gray-700 to-gray-900 text-white">
-      <CloudFlareImage
-        src="/icons/confused_blitz.webp"
-        alt="Confused Blitzcrank"
-        width={400}
-        height={400}
-      />
-      <h1 className="text-4xl font-bold">404 Not Found</h1>
-      <p className="text-xl">Could not find requested resource</p>
-      <Link
-        href="/draft"
-        className="mt-4 inline-block rounded bg-blue-500 px-4 py-2 text-xl font-bold text-white transition duration-300 hover:bg-blue-700"
-      >
-        Return to draft analysis
-      </Link>
+    <main className="flex min-h-screen w-full flex-col items-center bg-background text-foreground">
+      {/* Header Section */}
+      <div className="w-full bg-gradient-to-b from-primary/10 to-background py-8">
+        <div className="container flex flex-col items-center justify-center gap-4 px-4">
+          <h1 className="text-4xl font-bold tracking-tight text-primary text-center">
+            404 Not Found
+          </h1>
+          <p className="text-xl text-center text-muted-foreground">
+            Could not find requested resource
+          </p>
+        </div>
+      </div>
+
+      {/* Content Section */}
+      <div className="container px-4 py-12 flex flex-col items-center">
+        <CloudFlareImage
+          src="/icons/confused_blitz.webp"
+          alt="Confused Blitzcrank"
+          width={400}
+          height={400}
+        />
+        <Button asChild size="lg" className="mt-8">
+          <Link className="text-xl" href="/draft">
+            Return to draft analysis
+          </Link>
+        </Button>
+      </div>
     </main>
   );
 }
