@@ -45,6 +45,7 @@ from utils.match_prediction.train import (
     collate_fn,
 )
 import psutil
+from utils.rl.champions import Champion, ChampionClass
 
 # Enable cuDNN auto-tuner, source https://x.com/karpathy/status/1299921324333170689/photo/1
 torch.backends.cudnn.benchmark = True
@@ -119,13 +120,101 @@ def init_model(
     continue_training: bool,
     load_path: Optional[str] = None,
 ):
-    # Determine the number of unique categories from label encoders
+    # Load label encoders
     with open(ENCODERS_PATH, "rb") as f:
         label_encoders = pickle.load(f)
 
+    # Create mapping of champion IDs to their class
+    champ_to_class = {
+        str(champ.id): champ.champion_class for champ in Champion
+    }  # Convert IDs to strings
     num_categories = {
         col: len(label_encoders[col].classes_) for col in CATEGORICAL_COLUMNS
     }
+
+    # Get the champion encoder
+    champion_encoder = label_encoders["champion_ids"]
+
+    # Create a mapping of champion IDs to display names
+    champ_display_names = {str(champ.id): champ.display_name for champ in Champion}
+
+    # Initialize embeddings with class-based bias
+    # Track initialization statistics
+    class_counts = {class_type: 0 for class_type in ChampionClass}
+    missing_classes = []
+    missing_class_names = []  # To store display names for logging
+
+    # Define class means in embedding space
+    class_means = {
+        ChampionClass.MAGE: torch.randn(config.embed_dim) * 0.1,
+        ChampionClass.TANK: torch.randn(config.embed_dim) * 0.1,
+        ChampionClass.BRUISER: torch.randn(config.embed_dim) * 0.1,
+        ChampionClass.ASSASSIN: torch.randn(config.embed_dim) * 0.1,
+        ChampionClass.ADC: torch.randn(config.embed_dim) * 0.1,
+        ChampionClass.ENCHANTER: torch.randn(config.embed_dim) * 0.1,
+    }
+
+    # Initialize embeddings with random values first
+    embeddings = torch.randn(num_champions, config.embed_dim) * 0.1  # All start random
+
+    # For each encoded index
+    for raw_id in champion_encoder.classes_:
+        try:
+            raw_id_str = str(raw_id)
+            encoded_idx = champion_encoder.transform([raw_id])[0]
+
+            # Skip special handling for UNKNOWN champion
+            if raw_id_str == "UNKNOWN":
+                embeddings[encoded_idx] = torch.zeros(config.embed_dim)
+                continue
+
+            # Get the champion class from our mapping
+            champ_class = champ_to_class.get(raw_id_str, ChampionClass.UNIQUE)
+
+            # Only override the random initialization if we have a known class
+            if champ_class != ChampionClass.UNIQUE:
+                mean = class_means[champ_class]
+                noise = torch.randn(config.embed_dim) * 0.01
+                embeddings[encoded_idx] = mean + noise
+
+            # Track statistics
+            class_counts[champ_class] += 1
+            if champ_class == ChampionClass.UNIQUE:
+                missing_classes.append(raw_id_str)
+                display_name = champ_display_names.get(
+                    raw_id_str, f"Champion {raw_id_str}"
+                )
+                missing_class_names.append(display_name)
+
+        except ValueError as e:
+            print(f"Warning: Could not process champion ID {raw_id}: {e}")
+
+    # Log initialization statistics
+    print("\nChampion Embedding Initialization Statistics:")
+    print(f"Total champions: {num_champions}")
+    for class_type, count in class_counts.items():
+        print(f"{class_type.name}: {count} champions")
+    if missing_class_names:
+        print(
+            f"\nWarning: {len(missing_class_names)} champions without class assignment (defaulted to UNIQUE)"
+        )
+        print("Champions without class:")
+        for name in sorted(missing_class_names):
+            print(f"  - {name}")
+    print()  # Empty line for readability
+
+    if config.log_wandb:
+        wandb.log(
+            {
+                "init_total_champions": num_champions,
+                **{
+                    f"init_{class_type.name}_count": count
+                    for class_type, count in class_counts.items()
+                },
+                "init_missing_classes_count": len(missing_classes),
+            }
+        )
+
     # Initialize the model
     model = Model(
         num_categories=num_categories,
@@ -134,6 +223,9 @@ def init_model(
         hidden_dims=config.hidden_dims,
         dropout=config.dropout,
     )
+
+    # Apply the biased initialization
+    model.champion_embedding.weight.data = embeddings
 
     if continue_training:
         load_path = load_path or MODEL_PATH
