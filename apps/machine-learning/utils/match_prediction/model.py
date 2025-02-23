@@ -14,6 +14,22 @@ from utils.match_prediction.task_definitions import TASKS, TaskType
 from utils.match_prediction.config import TrainingConfig
 
 
+# Define SwiGLU activation
+class SwiGLU(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # SwiGLU splits the input dimension into two parts
+        self.linear = nn.Linear(dim, dim * 2)  # Double the dimension for gate and value
+
+    def forward(self, x):
+        # Split the doubled dimension into value and gate
+        x = self.linear(x)
+        v, g = x.chunk(2, dim=-1)
+        # Swish activation: x * sigmoid(x)
+        gate = g * torch.sigmoid(g)
+        return v * gate
+
+
 class Model(nn.Module):
     def __init__(
         self,
@@ -65,10 +81,9 @@ class Model(nn.Module):
         layers = []
         prev_dim = mlp_input_dim
         for i, hidden_dim in enumerate(hidden_dims):
-            linear = nn.Linear(prev_dim, hidden_dim)
-            layers.append(linear)
+            layers.append(nn.Linear(prev_dim, hidden_dim))
             layers.append(nn.LayerNorm(hidden_dim))
-            layers.append(nn.GELU())
+            layers.append(SwiGLU(hidden_dim))  # Replace GELU with SwiGLU
             layers.append(
                 nn.Dropout(dropout if i < len(hidden_dims) - 1 else 0.1)
             )  # Lower dropout for final layer
