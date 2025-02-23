@@ -18,7 +18,7 @@ from utils.match_prediction import (
 )
 from utils.match_prediction.column_definitions import CATEGORICAL_COLUMNS
 from utils.match_prediction.match_dataset import MatchDataset
-from utils.match_prediction.model import SimpleMatchModel
+from utils.match_prediction.model import Model
 from utils.match_prediction.task_definitions import TASKS
 from utils.match_prediction.train import get_num_champions, collate_fn
 from utils import DATA_DIR
@@ -135,7 +135,7 @@ def get_playrate_subgroup(
 
 
 def validate_with_subgroups(
-    model: SimpleMatchModel,
+    model: Model,
     test_loader: DataLoader,
     device: torch.device,
     play_rates: Dict[Tuple[int, int], float],
@@ -144,7 +144,7 @@ def validate_with_subgroups(
     Validate the model and perform subgroup analysis.
 
     Parameters:
-        model (SimpleMatchModel): The trained model.
+        model (Model): The trained model.
         test_loader (DataLoader): DataLoader for the test dataset.
         device (torch.device): Device to run the computations on.
         play_rates (Dict[Tuple[int, int], float]): Play rates for champion-role combinations.
@@ -259,7 +259,7 @@ def main():
     num_champions, _ = get_num_champions()
 
     # Initialize model
-    model = SimpleMatchModel(
+    model = Model(
         num_categories=num_categories,
         num_champions=num_champions,
         embed_dim=model_config["embed_dim"],

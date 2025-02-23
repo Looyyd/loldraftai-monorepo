@@ -11,7 +11,7 @@ from datetime import datetime
 import os
 from fastapi.security import APIKeyHeader
 
-from utils.match_prediction.model import SimpleMatchModel
+from utils.match_prediction.model import Model
 from utils.match_prediction.column_definitions import COLUMNS, ColumnType
 from utils.match_prediction import (
     MODEL_PATH,
@@ -120,11 +120,12 @@ device = get_best_device()
 device = "cpu"
 print(f"Using device: {device}")
 
-model = SimpleMatchModel(
+model = Model(
     num_categories=model_params["num_categories"],
     num_champions=model_params["num_champions"],
     embed_dim=model_params["embed_dim"],
     dropout=model_params["dropout"],
+    hidden_dims=model_params["hidden_dims"],
 )
 model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))
 model.to(device)

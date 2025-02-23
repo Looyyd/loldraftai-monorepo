@@ -24,7 +24,7 @@ import argparse
 from torch.optim.lr_scheduler import OneCycleLR
 
 from utils.match_prediction.match_dataset import MatchDataset
-from utils.match_prediction.model import SimpleMatchModel
+from utils.match_prediction.model import Model
 from utils import DATA_DIR
 from utils.match_prediction import (
     get_best_device,
@@ -91,7 +91,7 @@ def get_dataloader_config():
 dataloader_config = get_dataloader_config()
 
 
-def save_model(model: SimpleMatchModel, timestamp: Optional[str] = None) -> str:
+def save_model(model: Model, timestamp: Optional[str] = None) -> str:
     if timestamp is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     model_timestamp_path = f"{MODEL_PATH.rsplit('.', 1)[0]}_{timestamp}.pth"
@@ -127,7 +127,7 @@ def init_model(
         col: len(label_encoders[col].classes_) for col in CATEGORICAL_COLUMNS
     }
     # Initialize the model
-    model = SimpleMatchModel(
+    model = Model(
         num_categories=num_categories,
         num_champions=num_champions,
         embed_dim=config.embed_dim,
@@ -172,7 +172,7 @@ def apply_label_smoothing(labels: torch.Tensor, smoothing: float = 0.2) -> torch
 
 
 def train_epoch(
-    model: SimpleMatchModel,
+    model: Model,
     train_loader: DataLoader,
     optimizer: optim.Optimizer,
     scheduler: Optional[OneCycleLR],
@@ -239,7 +239,7 @@ def train_epoch(
 
 
 def validate(
-    model: SimpleMatchModel,
+    model: Model,
     test_loader: DataLoader,
     criterion: Dict[str, nn.Module],
     config: TrainingConfig,

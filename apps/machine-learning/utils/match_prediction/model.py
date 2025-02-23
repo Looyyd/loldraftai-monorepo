@@ -14,7 +14,7 @@ from utils.match_prediction.task_definitions import TASKS, TaskType
 from utils.match_prediction.config import TrainingConfig
 
 
-class SimpleMatchModel(nn.Module):
+class Model(nn.Module):
     def __init__(
         self,
         num_categories,
@@ -23,9 +23,8 @@ class SimpleMatchModel(nn.Module):
         hidden_dims,
         dropout,
     ):
-        super(SimpleMatchModel, self).__init__()
+        super(Model, self).__init__()
 
-        # Store dimensions for debugging
         self.embed_dim = embed_dim
 
         # Embeddings for categorical features
@@ -41,12 +40,10 @@ class SimpleMatchModel(nn.Module):
             nn.Linear(len(NUMERICAL_COLUMNS), embed_dim) if NUMERICAL_COLUMNS else None
         )
 
-        # Calculate total input dimension for MLP
-        num_categorical = len(CATEGORICAL_COLUMNS)  # Categorical features
-        num_champions = len(POSITIONS) * 2  # Champions from both teams
-        num_numerical_projections = (
-            1 if NUMERICAL_COLUMNS else 0
-        )  # Projected numerical features
+        # Calculate total input dimension
+        num_categorical = len(CATEGORICAL_COLUMNS)
+        num_champions = len(POSITIONS) * 2
+        num_numerical_projections = 1 if NUMERICAL_COLUMNS else 0
         total_embed_features = (
             num_categorical + num_champions + num_numerical_projections
         )
@@ -60,19 +57,24 @@ class SimpleMatchModel(nn.Module):
         print(f"- Embedding dimension: {embed_dim}")
         print(f"- MLP input dimension: {mlp_input_dim}")
 
-        # MLP layers
+        # Lightweight attention layer for feature interaction
+        self.attention = nn.MultiheadAttention(embed_dim, num_heads=4, batch_first=True)
+        self.attn_norm = nn.LayerNorm(embed_dim)
+
+        # MLP with residual connections
         layers = []
         prev_dim = mlp_input_dim
-
-        for hidden_dim in hidden_dims:
-            layers.extend(
-                [
-                    nn.Linear(prev_dim, hidden_dim, bias=False),
-                    nn.BatchNorm1d(hidden_dim),
-                    nn.GELU(),
-                    nn.Dropout(dropout),
-                ]
-            )
+        for i, hidden_dim in enumerate(hidden_dims):
+            linear = nn.Linear(prev_dim, hidden_dim)
+            layers.append(linear)
+            layers.append(nn.LayerNorm(hidden_dim))
+            layers.append(nn.GELU())
+            layers.append(
+                nn.Dropout(dropout if i < len(hidden_dims) - 1 else 0.1)
+            )  # Lower dropout for final layer
+            # Add skip connection if dimensions match
+            if i > 0 and hidden_dims[i - 1] == hidden_dim:
+                layers.append(ResidualConnection())
             prev_dim = hidden_dim
 
         self.mlp = nn.Sequential(*layers)
@@ -92,48 +94,42 @@ class SimpleMatchModel(nn.Module):
 
         # Process categorical features
         for col in CATEGORICAL_COLUMNS:
-            embed = self.embeddings[col](features[col])  # [batch_size, embed_dim]
+            embed = self.embeddings[col](features[col])
             embeddings_list.append(embed)
 
         # Process champion features
-        champion_ids = features["champion_ids"]  # [batch_size, num_champions]
+        champion_ids = features["champion_ids"]
         champion_embeds = self.champion_embedding(
             champion_ids
         )  # [batch_size, num_champions, embed_dim]
+        champion_features = champion_embeds  # Placeholder for future role features
+        embeddings_list.append(champion_features.view(batch_size, -1))
 
-        # Combine champion and champion other champion features(empty for now because we don't have role percentages or other features)
-        champion_features = champion_embeds
-
-        # Reshape champion features to [batch_size, num_champions * embed_dim]
-        champion_features = champion_features.view(batch_size, -1)
-        embeddings_list.append(champion_features)
-
-        # Process numerical features if they exist
+        # Process numerical features
         if self.numerical_projection is not None and NUMERICAL_COLUMNS:
             numerical_features = torch.stack(
                 [features[col] for col in NUMERICAL_COLUMNS], dim=1
             )
-            numerical_embed = self.numerical_projection(
-                numerical_features
-            )  # [batch_size, embed_dim]
+            numerical_embed = self.numerical_projection(numerical_features)
             embeddings_list.append(numerical_embed)
 
-        # Concatenate all features
-        combined_features = torch.cat(embeddings_list, dim=1)
-
-        # Debug print dimensions
-        if combined_features.shape[1] != self.mlp[0].weight.shape[1]:
-            print(f"\nDimension mismatch!")
-            print(f"Combined features shape: {combined_features.shape}")
-            print(f"First MLP layer input dim: {self.mlp[0].weight.shape[1]}")
-            print(f"First MLP layer weight shape: {self.mlp[0].weight.shape}")
-            for i, embedding in enumerate(embeddings_list):
-                print(f"Embedding {i} shape: {embedding.shape}")
+        # Concatenate embeddings and apply attention
+        combined_features = torch.cat(
+            embeddings_list, dim=1
+        )  # [batch_size, total_embed_features * embed_dim]
+        combined_features = combined_features.view(
+            batch_size, -1, self.embed_dim
+        )  # [batch_size, seq_len, embed_dim]
+        attn_output, _ = self.attention(
+            combined_features, combined_features, combined_features
+        )
+        attn_output = self.attn_norm(attn_output)
+        combined_features = attn_output.view(batch_size, -1)  # Flatten back
 
         # Pass through MLP
         x = self.mlp(combined_features)
 
-        # Generate outputs for each task
+        # Generate outputs
         outputs = {}
         for task_name, output_layer in self.output_layers.items():
             outputs[task_name] = output_layer(x).squeeze(-1)
@@ -141,11 +137,18 @@ class SimpleMatchModel(nn.Module):
         return outputs
 
 
+class ResidualConnection(nn.Module):
+    def forward(self, x):
+        return x + self.prev_x if hasattr(self, "prev_x") else x
+
+    def forward_pre(self, x):
+        self.prev_x = x
+        return x
+
+
 if __name__ == "__main__":
-    # Load configuration
     config = TrainingConfig()
 
-    # Determine the number of unique categories from label encoders
     with open(ENCODERS_PATH, "rb") as f:
         label_encoders = pickle.load(f)
     num_categories = {
@@ -153,36 +156,19 @@ if __name__ == "__main__":
     }
     num_champions = 200
 
-    model = SimpleMatchModel(
+    model = Model(
         num_categories=num_categories,
         num_champions=num_champions,
         embed_dim=config.embed_dim,
+        hidden_dims=config.hidden_dims,
         dropout=config.dropout,
     )
-    # Print model architecture
     print(model)
 
-    # Calculate and print model size
-    param_size = 0
-    for param in model.parameters():
-        param_size += param.nelement() * param.element_size()
-    buffer_size = 0
-    for buffer in model.buffers():
-        buffer_size += buffer.nelement() * buffer.element_size()
-
-    size_all_mb = (param_size + buffer_size) / 1024**2
-    print(f"\nModel Size: {size_all_mb:.3f} MB")
-
-    # Print sizes of individual layers
-    print("\nLayer Sizes:")
-    for name, module in model.named_modules():
-        if isinstance(module, (nn.Embedding, nn.Linear)):
-            layer_size = (
-                sum(p.nelement() * p.element_size() for p in module.parameters())
-                / 1024**2
-            )
-            print(f"{name}: {layer_size:.3f} MB")
-
-    # Count trainable parameters
+    param_size = (
+        sum(param.nelement() * param.element_size() for param in model.parameters())
+        / 1024**2
+    )
+    print(f"\nModel Size: {param_size:.3f} MB")
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\nTrainable parameters: {trainable_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
