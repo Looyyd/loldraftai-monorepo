@@ -10,9 +10,9 @@ class TrainingConfig:
         # Default values
         self.num_epochs = 25
         self.hidden_dims = [512, 256, 128, 64]  # Deeper network
-        self.dropout = 0.2  # Adjusted for deeper model
+        self.dropout = 0.4  # Doubled dropout after adding positional embeddings
         self.learning_rate = (
-            1e-3  # Slightly lower to stabilize training with added complexity
+            5e-4  # Lowered after positional embeddings were added
         )
         self.embed_dim = 128  # seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
@@ -21,8 +21,8 @@ class TrainingConfig:
 
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
         self.weight_decay = 0.01
-        self.max_grad_norm = 1.0
-        self.accumulation_steps = 1
+        self.max_grad_norm = 0.5 # because has loss spikes after adding pos embeddings
+        self.accumulation_steps = 4
         self.masking_strategy = {
             "name": "strategic",
             "params": {"decay_factor": 2.0},

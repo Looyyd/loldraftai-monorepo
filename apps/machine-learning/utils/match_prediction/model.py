@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 import pickle
+import math
 
 from utils.match_prediction import ENCODERS_PATH
 from utils.match_prediction.column_definitions import (
@@ -79,7 +80,12 @@ class Model(nn.Module):
         print(f"- MLP input dimension: {mlp_input_dim}")
 
         # Lightweight attention layer for feature interaction
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads=4, batch_first=True)
+        self.attention = nn.MultiheadAttention(
+            embed_dim,
+            num_heads=4,
+            batch_first=True,
+            dropout=dropout / 2,  # half of main dropout
+        )
         self.attn_norm = nn.LayerNorm(embed_dim)
 
         # MLP with residual connections
@@ -141,10 +147,10 @@ class Model(nn.Module):
             batch_size, -1, self.embed_dim
         )  # [batch_size, seq_len, embed_dim]
 
-        # Add positional embeddings
-        combined_features = (
-            combined_features + self.pos_embedding
-        )  # [batch_size, seq_len, embed_dim]
+        # Add scaled positional embeddings
+        combined_features = combined_features + (
+            self.pos_embedding / math.sqrt(self.embed_dim)
+        )
 
         attn_output, _ = self.attention(
             combined_features, combined_features, combined_features

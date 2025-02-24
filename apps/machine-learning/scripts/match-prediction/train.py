@@ -35,6 +35,8 @@ from utils.match_prediction import (
 )
 from utils.match_prediction.column_definitions import (
     CATEGORICAL_COLUMNS,
+    NUMERICAL_COLUMNS,
+    POSITIONS,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType, get_enabled_tasks
 from utils.match_prediction.config import TrainingConfig
