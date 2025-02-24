@@ -65,6 +65,11 @@ class Model(nn.Module):
         )
         mlp_input_dim = total_embed_features * embed_dim
 
+        # Add positional embeddings
+        self.pos_embedding = nn.Parameter(
+            torch.randn(1, total_embed_features, embed_dim)
+        )
+
         print(f"Model dimensions:")
         print(f"- Categorical features: {num_categorical}")
         print(f"- Champion positions: {num_champions}")
@@ -135,6 +140,12 @@ class Model(nn.Module):
         combined_features = combined_features.view(
             batch_size, -1, self.embed_dim
         )  # [batch_size, seq_len, embed_dim]
+
+        # Add positional embeddings
+        combined_features = (
+            combined_features + self.pos_embedding
+        )  # [batch_size, seq_len, embed_dim]
+
         attn_output, _ = self.attention(
             combined_features, combined_features, combined_features
         )

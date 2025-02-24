@@ -138,13 +138,11 @@ def init_model(
     # Create a mapping of champion IDs to display names
     champ_display_names = {str(champ.id): champ.display_name for champ in Champion}
 
-    # Initialize embeddings with class-based bias
-    # Track initialization statistics
+    # Initialize embeddings with class-based bias (unchanged for now)
     class_counts = {class_type: 0 for class_type in ChampionClass}
     missing_classes = []
     missing_class_names = []  # To store display names for logging
 
-    # Define class means in embedding space
     class_means = {
         ChampionClass.MAGE: torch.randn(config.embed_dim) * 0.1,
         ChampionClass.TANK: torch.randn(config.embed_dim) * 0.1,
@@ -154,30 +152,24 @@ def init_model(
         ChampionClass.ENCHANTER: torch.randn(config.embed_dim) * 0.1,
     }
 
-    # Initialize embeddings with random values first
-    embeddings = torch.randn(num_champions, config.embed_dim) * 0.1  # All start random
-
-    # For each encoded index
+    # Initialize champion embeddings (unchanged)
+    embeddings = torch.randn(num_champions, config.embed_dim) * 0.1
     for raw_id in champion_encoder.classes_:
         try:
             raw_id_str = str(raw_id)
             encoded_idx = champion_encoder.transform([raw_id])[0]
 
-            # Skip special handling for UNKNOWN champion
             if raw_id_str == "UNKNOWN":
                 embeddings[encoded_idx] = torch.zeros(config.embed_dim)
                 continue
 
-            # Get the champion class from our mapping
             champ_class = champ_to_class.get(raw_id_str, ChampionClass.UNIQUE)
 
-            # Only override the random initialization if we have a known class
             if champ_class != ChampionClass.UNIQUE:
                 mean = class_means[champ_class]
                 noise = torch.randn(config.embed_dim) * 0.01
                 embeddings[encoded_idx] = mean + noise
 
-            # Track statistics
             class_counts[champ_class] += 1
             if champ_class == ChampionClass.UNIQUE:
                 missing_classes.append(raw_id_str)
@@ -189,7 +181,7 @@ def init_model(
         except ValueError as e:
             print(f"Warning: Could not process champion ID {raw_id}: {e}")
 
-    # Log initialization statistics
+    # Log initialization statistics (unchanged)
     print("\nChampion Embedding Initialization Statistics:")
     print(f"Total champions: {num_champions}")
     for class_type, count in class_counts.items():
@@ -201,7 +193,7 @@ def init_model(
         print("Champions without class:")
         for name in sorted(missing_class_names):
             print(f"  - {name}")
-    print()  # Empty line for readability
+    print()
 
     if config.log_wandb:
         wandb.log(
@@ -215,6 +207,47 @@ def init_model(
             }
         )
 
+    # Calculate total embedded features for positional embeddings
+    num_categorical = len(CATEGORICAL_COLUMNS)
+    num_champions = len(POSITIONS) * 2  # 10 positions (5 per team)
+    num_numerical_projections = 1 if NUMERICAL_COLUMNS else 0
+    total_embed_features = num_categorical + num_champions + num_numerical_projections
+
+    # Initialize positional embeddings with your custom structure
+    pos_embeddings = torch.zeros(
+        total_embed_features, config.embed_dim
+    )  # Start with zeros
+
+    # Define noise vector for blue/red difference
+    noise = torch.randn(config.embed_dim) * 0.02  # Small noise, scalable as needed
+
+    # Positions: [blue_top, blue_jungle, blue_mid, blue_adc, blue_support, red_top, red_jungle, red_mid, red_adc, red_support]
+    # Assume categorical and numerical features come first, then champions
+    champion_start_idx = num_categorical  # Start of champion positions
+    champion_end_idx = champion_start_idx + num_champions  # End of champion positions
+
+    # Initialize blue positions (0–4 for blue team)
+    for i in range(5):  # blue_top to blue_support
+        pos_idx = champion_start_idx + i
+        # Initialize with small random values (or zeros, then add noise)
+        pos_embeddings[pos_idx] = torch.randn(config.embed_dim) * 0.1
+
+    # Initialize red positions (5–9 for red team) as blue + noise
+    for i in range(5):  # red_top to red_support
+        pos_idx = champion_start_idx + 5 + i
+        blue_pos_idx = champion_start_idx + i  # Corresponding blue position
+        pos_embeddings[pos_idx] = pos_embeddings[blue_pos_idx] + noise
+
+    # If there are categorical or numerical features, initialize them randomly or zero them
+    if num_categorical > 0:
+        pos_embeddings[:num_categorical] = (
+            torch.randn(num_categorical, config.embed_dim) * 0.1
+        )
+    if num_numerical_projections > 0:
+        pos_embeddings[champion_end_idx:] = (
+            torch.randn(num_numerical_projections, config.embed_dim) * 0.1
+        )
+
     # Initialize the model
     model = Model(
         num_categories=num_categories,
@@ -224,8 +257,13 @@ def init_model(
         dropout=config.dropout,
     )
 
-    # Apply the biased initialization
+    # Apply the champion embeddings (unchanged)
     model.champion_embedding.weight.data = embeddings
+
+    # Apply the custom positional embeddings
+    model.pos_embedding.data = pos_embeddings.unsqueeze(
+        0
+    )  # Shape [1, total_embed_features, embed_dim] for broadcasting
 
     if continue_training:
         load_path = load_path or MODEL_PATH
@@ -235,14 +273,14 @@ def init_model(
         else:
             print(f"No saved model found at {load_path}. Starting from scratch.")
 
-    # Create a dictionary with model parameters
+    # Create a dictionary with model parameters (unchanged)
     model_params = {
         "num_categories": num_categories,
         "num_champions": num_champions,
         **config.to_dict(),
     }
 
-    # Save model config
+    # Save model config (unchanged)
     with open(MODEL_CONFIG_PATH, "wb") as f:
         pickle.dump(model_params, f)
 
