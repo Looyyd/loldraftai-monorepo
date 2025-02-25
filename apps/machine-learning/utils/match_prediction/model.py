@@ -68,9 +68,9 @@ class Model(nn.Module):
         self,
         num_categories,
         num_champions,
-        embed_dim,
-        hidden_dims,
-        dropout,
+        embed_dim=64,
+        hidden_dims=[256, 128, 64],
+        dropout=0.2,
     ):
         super(Model, self).__init__()
 
@@ -98,15 +98,6 @@ class Model(nn.Module):
         )
         mlp_input_dim = total_embed_features * embed_dim
 
-        # Add position-specific projections for role awareness
-        # This replaces positional embeddings with explicit role projections
-        self.role_projections = nn.ModuleDict()
-        for i, position in enumerate(POSITIONS):
-            # Blue team positions
-            self.role_projections[f"blue_{position}"] = nn.Linear(embed_dim, embed_dim)
-            # Red team positions
-            self.role_projections[f"red_{position}"] = nn.Linear(embed_dim, embed_dim)
-
         print(f"Model dimensions:")
         print(f"- Categorical features: {num_categorical}")
         print(f"- Champion positions: {num_champions}")
@@ -115,35 +106,27 @@ class Model(nn.Module):
         print(f"- Embedding dimension: {embed_dim}")
         print(f"- MLP input dimension: {mlp_input_dim}")
 
-        # Feature interaction layer - instead of attention, use a feature mixer
-        # If numerical features are present, adjust input dimension to include them
-        feature_mixer_input_dim = embed_dim * 2 if NUMERICAL_COLUMNS else embed_dim
-
-        self.feature_mixer = nn.Sequential(
-            nn.LayerNorm(feature_mixer_input_dim),
-            nn.Linear(feature_mixer_input_dim, embed_dim * 2),
-            nn.GELU(),
-            nn.Dropout(dropout * 0.5),  # Lower dropout for mixer
-            nn.Linear(embed_dim * 2, embed_dim),
-        )
-
-        # MLP blocks with residual connections
-        self.mlp_blocks = nn.ModuleList()
+        # Simple but effective MLP with modern components
+        layers = []
         prev_dim = mlp_input_dim
 
         for i, hidden_dim in enumerate(hidden_dims):
-            # Use residual connections where dimensions match after the first layer
-            use_residual = i > 0 and hidden_dims[i - 1] == hidden_dim
+            # Linear layer (no bias when followed by BatchNorm)
+            layers.append(nn.Linear(prev_dim, hidden_dim, bias=False))
 
-            self.mlp_blocks.append(
-                MLPBlock(
-                    input_dim=prev_dim,
-                    output_dim=hidden_dim,
-                    dropout=dropout if i < len(hidden_dims) - 1 else dropout * 0.5,
-                    use_residual=use_residual,
-                )
-            )
+            # BatchNorm - more stable than LayerNorm for this architecture
+            layers.append(nn.BatchNorm1d(hidden_dim))
+
+            # GELU activation - smoother than ReLU but still stable
+            layers.append(nn.GELU())
+
+            # Dropout - reduced for later layers
+            dropout_rate = dropout if i < len(hidden_dims) - 1 else dropout * 0.5
+            layers.append(nn.Dropout(dropout_rate))
+
             prev_dim = hidden_dim
+
+        self.mlp = nn.Sequential(*layers)
 
         # Output layers for each task
         self.output_layers = nn.ModuleDict()
@@ -163,70 +146,27 @@ class Model(nn.Module):
             embed = self.embeddings[col](features[col])
             embeddings_list.append(embed)
 
-        # Process champion features with position-specific projections
-        champion_ids = features["champion_ids"]  # [batch_size, num_positions]
-        champion_embeds = self.champion_embedding(
-            champion_ids
-        )  # [batch_size, num_positions, embed_dim]
+        # Process champion features
+        champion_ids = features["champion_ids"]
+        champion_embeds = self.champion_embedding(champion_ids)
 
-        # Process numerical features first to condition the feature mixer
-        numerical_context = None
+        # Flatten champion embeddings
+        champion_features = champion_embeds.view(batch_size, -1)
+        embeddings_list.append(champion_features)
+
+        # Process numerical features
         if self.numerical_projection is not None and NUMERICAL_COLUMNS:
             numerical_features = torch.stack(
                 [features[col] for col in NUMERICAL_COLUMNS], dim=1
             )
-            numerical_context = self.numerical_projection(numerical_features)
-            # We'll append this to embeddings_list later
+            numerical_embed = self.numerical_projection(numerical_features)
+            embeddings_list.append(numerical_embed)
 
-        # Apply position-specific projections for role awareness
-        position_aware_embeds = []
-
-        # Blue team positions (first 5)
-        for i, position in enumerate(POSITIONS):
-            position_embed = self.role_projections[f"blue_{position}"](
-                champion_embeds[:, i]
-            )
-            position_aware_embeds.append(position_embed)
-
-        # Red team positions (last 5)
-        for i, position in enumerate(POSITIONS):
-            position_embed = self.role_projections[f"red_{position}"](
-                champion_embeds[:, i + 5]
-            )
-            position_aware_embeds.append(position_embed)
-
-        # Process each position embedding through feature mixer with numerical context
-        mixed_embeds = []
-        for i, embed in enumerate(position_aware_embeds):
-            # If we have numerical features, concatenate them with each position embedding
-            if numerical_context is not None:
-                # Concatenate champion embed with numerical context
-                enriched_embed = torch.cat([embed, numerical_context], dim=1)
-                # Apply feature mixer with numerical context
-                mixed = self.feature_mixer(enriched_embed)
-            else:
-                # Without numerical features, just use the original mixer
-                mixed = self.feature_mixer(embed)
-
-            mixed_embeds.append(mixed)
-
-        # Concatenate all champion embeddings
-        champion_features = torch.cat([e.unsqueeze(1) for e in mixed_embeds], dim=1)
-        embeddings_list.append(champion_features.view(batch_size, -1))
-
-        # Add numerical features to the overall feature set if not already used
-        if numerical_context is not None and self.numerical_projection is not None:
-            embeddings_list.append(numerical_context)
-
-        # Numerical features were already processed and added to embeddings_list in the champion processing section
-
-        # Concatenate all embeddings
+        # Concatenate all features
         combined_features = torch.cat(embeddings_list, dim=1)
 
-        # Pass through MLP blocks
-        x = combined_features
-        for block in self.mlp_blocks:
-            x = block(x)
+        # Pass through MLP
+        x = self.mlp(combined_features)
 
         # Generate outputs
         outputs = {}

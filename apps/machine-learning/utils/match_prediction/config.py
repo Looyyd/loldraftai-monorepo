@@ -9,17 +9,17 @@ class TrainingConfig:
     def __init__(self):
         # Default values
         self.num_epochs = 25
-        self.hidden_dims = [512, 256, 128, 64]  # Deeper network
-        self.dropout = 0.4  # Doubled dropout after adding positional embeddings
-        self.learning_rate = 2e-4  # Lowered after positional embeddings were added
-        self.embed_dim = 128  # seems optimal see experiments:
+        self.hidden_dims = [384, 192, 96]
+        self.dropout = 0.25  # Doubled dropout after adding positional embeddings
+        self.learning_rate = 5e-4  # Lowered after positional embeddings were added
+        self.embed_dim = 64  # seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
         # 256: https://wandb.ai/loyd-team/draftking/runs/6w221kxa?nw=nwuserloyd
         # 1024: https://wandb.ai/loyd-team/draftking/runs/5eg66qlp?nw=nwuserloyd
 
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
-        self.weight_decay = 0.01
-        self.max_grad_norm = 0.5  # because has loss spikes after adding pos embeddings
+        self.weight_decay = 0.001
+        self.max_grad_norm = 1.0  # because has loss spikes after adding pos embeddings
         self.accumulation_steps = 1
         self.masking_strategy = {
             "name": "strategic",
@@ -33,9 +33,9 @@ class TrainingConfig:
         # Add OneCycleLR parameters
         self.use_one_cycle_lr = True
         self.max_lr = self.learning_rate
-        self.pct_start = 0.15  # 15% of training for warmup
-        self.div_factor = 10.0  # initial_lr = max_lr/div_factor
-        self.final_div_factor = 1e4  # final_lr = max_lr/(div_factor * final_div_factor)
+        self.pct_start = 0.2  # 15% of training for warmup
+        self.div_factor = 5  # initial_lr = max_lr/div_factor
+        self.final_div_factor = 1e3  # final_lr = max_lr/(div_factor * final_div_factor)
 
         # Add new configuration parameters
         self.validation_interval = 1  # Run validation every N epochs
