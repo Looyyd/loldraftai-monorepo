@@ -36,6 +36,8 @@ def get_optimizer_grouped_parameters(
             or "pos_embedding" in name
             or "bias" in name
             or "norm" in name
+            or "pos_scale" in name
+            or "numerical_projection" in name
         ):
             nodecay_params.append(param)
         else:

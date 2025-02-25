@@ -11,9 +11,7 @@ class TrainingConfig:
         self.num_epochs = 25
         self.hidden_dims = [512, 256, 128, 64]  # Deeper network
         self.dropout = 0.4  # Doubled dropout after adding positional embeddings
-        self.learning_rate = (
-            5e-4  # Lowered after positional embeddings were added
-        )
+        self.learning_rate = 2e-4  # Lowered after positional embeddings were added
         self.embed_dim = 128  # seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
         # 256: https://wandb.ai/loyd-team/draftking/runs/6w221kxa?nw=nwuserloyd
@@ -21,8 +19,8 @@ class TrainingConfig:
 
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
         self.weight_decay = 0.01
-        self.max_grad_norm = 0.5 # because has loss spikes after adding pos embeddings
-        self.accumulation_steps = 4
+        self.max_grad_norm = 0.5  # because has loss spikes after adding pos embeddings
+        self.accumulation_steps = 1
         self.masking_strategy = {
             "name": "strategic",
             "params": {"decay_factor": 2.0},
@@ -35,8 +33,8 @@ class TrainingConfig:
         # Add OneCycleLR parameters
         self.use_one_cycle_lr = True
         self.max_lr = self.learning_rate
-        self.pct_start = 0.3  # 30% of training for warmup
-        self.div_factor = 25.0  # initial_lr = max_lr/div_factor
+        self.pct_start = 0.15  # 15% of training for warmup
+        self.div_factor = 10.0  # initial_lr = max_lr/div_factor
         self.final_div_factor = 1e4  # final_lr = max_lr/(div_factor * final_div_factor)
 
         # Add new configuration parameters

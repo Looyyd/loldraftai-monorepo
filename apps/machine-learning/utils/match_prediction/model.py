@@ -69,7 +69,10 @@ class Model(nn.Module):
         # Add positional embeddings
         self.pos_embedding = nn.Parameter(
             torch.randn(1, total_embed_features, embed_dim)
+            * 0.02  # Scaled down initialization
         )
+        # Add trainable scaling factor for positional embeddings
+        self.pos_scale = nn.Parameter(torch.tensor(0.2))
 
         print(f"Model dimensions:")
         print(f"- Categorical features: {num_categorical}")
@@ -79,14 +82,24 @@ class Model(nn.Module):
         print(f"- Embedding dimension: {embed_dim}")
         print(f"- MLP input dimension: {mlp_input_dim}")
 
-        # Lightweight attention layer for feature interaction
+        # Pre-LayerNorm (before attention)
+        self.pre_attn_norm = nn.LayerNorm(embed_dim)
+
+        # Attention layer
         self.attention = nn.MultiheadAttention(
-            embed_dim,
-            num_heads=4,
-            batch_first=True,
-            dropout=dropout / 2,  # half of main dropout
+            embed_dim, num_heads=4, batch_first=True, dropout=dropout / 2
         )
+
+        # Post-attention LayerNorm
         self.attn_norm = nn.LayerNorm(embed_dim)
+
+        # Add feed-forward network after attention
+        self.attn_ff = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 2),
+            nn.GELU(),
+            nn.Linear(embed_dim * 2, embed_dim),
+            nn.Dropout(dropout),
+        )
 
         # MLP with residual connections
         layers = []
@@ -139,7 +152,7 @@ class Model(nn.Module):
             numerical_embed = self.numerical_projection(numerical_features)
             embeddings_list.append(numerical_embed)
 
-        # Concatenate embeddings and apply attention
+        # Concatenate embeddings
         combined_features = torch.cat(
             embeddings_list, dim=1
         )  # [batch_size, total_embed_features * embed_dim]
@@ -147,16 +160,26 @@ class Model(nn.Module):
             batch_size, -1, self.embed_dim
         )  # [batch_size, seq_len, embed_dim]
 
-        # Add scaled positional embeddings
-        combined_features = combined_features + (
-            self.pos_embedding / math.sqrt(self.embed_dim)
-        )
+        # Add scaled positional embeddings with trainable scaling factor
+        combined_features = combined_features + (self.pos_embedding * self.pos_scale)
 
-        attn_output, _ = self.attention(
-            combined_features, combined_features, combined_features
-        )
-        attn_output = self.attn_norm(attn_output)
-        combined_features = attn_output.view(batch_size, -1)  # Flatten back
+        # Pre-LayerNorm before attention
+        norm_features = self.pre_attn_norm(combined_features)
+
+        # Apply attention
+        attn_output, _ = self.attention(norm_features, norm_features, norm_features)
+
+        # Skip connection after attention
+        combined_features = combined_features + attn_output
+
+        # Post-attention normalization
+        attn_output = self.attn_norm(combined_features)
+
+        # Feed-forward after attention with residual connection
+        attn_output = attn_output + self.attn_ff(attn_output)
+
+        # Flatten for MLP input
+        combined_features = attn_output.view(batch_size, -1)
 
         # Pass through MLP
         x = self.mlp(combined_features)
