@@ -9,10 +9,10 @@ class TrainingConfig:
     def __init__(self):
         # Default values
         self.num_epochs = 25
-        self.hidden_dims = [384, 192, 96]
+        self.hidden_dims = [768, 384, 192, 96]  # Both wider and one layer deeper
         self.dropout = 0.25  # Doubled dropout after adding positional embeddings
         self.learning_rate = 5e-4  # Lowered after positional embeddings were added
-        self.embed_dim = 64  # seems optimal see experiments:
+        self.embed_dim = 128  # seems optimal see experiments:
         # 128: https://wandb.ai/loyd-team/draftking/runs/hs7ocp6d?nw=nwuserloyd
         # 256: https://wandb.ai/loyd-team/draftking/runs/6w221kxa?nw=nwuserloyd
         # 1024: https://wandb.ai/loyd-team/draftking/runs/5eg66qlp?nw=nwuserloyd
