@@ -25,7 +25,7 @@ from typing import List, Dict
 from collections import defaultdict
 
 # Constants
-NUM_RECENT_PATCHES = 5  # Number of most recent patches to use for training
+NUM_RECENT_PATCHES = 10  # Number of most recent patches to use for training
 
 
 def load_data(file_path):
