@@ -16,7 +16,7 @@ RUN mkdir -p data/models \
     && mkdir -p data/raw_data
 
 # Copy model files to match local structure
-COPY data/models/match_outcome_model.pth ./data/models/
+COPY data/models/match_outcome_model.onnx ./data/models/
 COPY data/label_encoders.pkl \
      data/model_config.pkl \
      data/numerical_feature_stats.pkl \

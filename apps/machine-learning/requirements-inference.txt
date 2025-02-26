@@ -11,6 +11,8 @@ torchvision --extra-index-url https://download.pytorch.org/whl/cpu
 fastapi
 uvicorn
 pydantic  # For FastAPI models
+onnx
+onnxruntime
 
 # Data Processing
 scikit-learn==1.5.2  # For label encoders  # Pin to match training environment

@@ -5,7 +5,7 @@
 !requirements-inference.txt
 !serve-model.py
 !utils/
-!data/models/match_outcome_model.pth
+!data/models/match_outcome_model.onnx
 !data/label_encoders.pkl
 !data/model_config.pkl
 !data/numerical_feature_stats.pkl
