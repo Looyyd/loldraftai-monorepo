@@ -9,6 +9,7 @@ class TrainingConfig:
     def __init__(self):
         # Default values
         self.num_epochs = 25
+        self.annealing_epoch = 10
         self.hidden_dims = [768, 384, 192, 96]  # Both wider and one layer deeper
         self.dropout = 0.25  # Doubled dropout after adding positional embeddings
         self.learning_rate = 5e-4  # Lowered after positional embeddings were added

@@ -270,7 +270,8 @@ def train_epoch(
     model.train()
     epoch_loss = 0.0
     epoch_steps = 0
-    enabled_tasks = get_enabled_tasks(config)
+    enabled_tasks = get_enabled_tasks(config, epoch)
+    print(f"Enabled tasks length for epoch {epoch}: {len(enabled_tasks)}")
     task_names = list(enabled_tasks.keys())
     task_weights = torch.tensor(
         [task_def.weight for task_def in enabled_tasks.values()], device=device
@@ -330,9 +331,10 @@ def validate(
     criterion: Dict[str, nn.Module],
     config: TrainingConfig,
     device: torch.device,
+    epoch: int,
 ) -> Tuple[Optional[float], Dict[str, float]]:
     model.eval()
-    enabled_tasks = get_enabled_tasks(config)  # Get only enabled tasks
+    enabled_tasks = get_enabled_tasks(config, epoch)  # Get only enabled tasks
     metric_accumulators = {
         task_name: torch.zeros(2).cpu() for task_name in enabled_tasks.keys()
     }
@@ -501,7 +503,7 @@ def train_model(
 
     # Initialize loss functions for each task
     criterion = {}
-    enabled_tasks = get_enabled_tasks(config)  # Get only enabled tasks
+    enabled_tasks = get_enabled_tasks(config, epoch=0)  # Get only enabled tasks
     for task_name, task_def in enabled_tasks.items():
         if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
             criterion[task_name] = nn.BCEWithLogitsLoss()
@@ -552,10 +554,10 @@ def train_model(
         # Only run validation on specified intervals
         if (epoch + 1) % config.validation_interval == 0:
             val_loss, val_metrics = validate(
-                model, test_loader, criterion, config, device
+                model, test_loader, criterion, config, device, epoch
             )
             val_masked_loss, val_masked_metrics = validate(
-                model, test_masked_loader, criterion, config, device
+                model, test_masked_loader, criterion, config, device, epoch
             )
 
             if config.calculate_val_loss:
