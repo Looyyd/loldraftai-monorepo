@@ -158,27 +158,10 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
     return patch_mapping, patch_counts
 
 
-def filter_outliers(
-    df: pd.DataFrame, is_temp_enhanced: bool = False
-) -> Tuple[pd.DataFrame, Dict[str, int]]:
+def filter_outliers(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
     """
     Filter out games with potential griefers/AFKs based on specified rules.
-
-    Parameters:
-    -----------
-    df : pd.DataFrame
-        Input dataframe with game data
-    is_temp_enhanced : bool
-        Whether this is being called on the temporary enhanced dataset
-
-    Returns:
-    --------
-    pd.DataFrame
-        Filtered dataframe
-    Dict[str, int]
-        Count of rows filtered by each rule
     """
-    # Initialize filter counts
     filter_counts = {
         "original_count": len(df),
         "gold_filter": 0,
@@ -187,159 +170,81 @@ def filter_outliers(
         "level_filter": 0,
     }
 
-    # Track original length
     original_count = len(df)
-    print(f"Starting filtering with {original_count} rows")
-
-    # 1. Filter: Less than MIN_GOLD_15MIN gold at 15 minutes (900000ms) for any role
     roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
-    teams = [100, 200]  # Blue team (100) and Red team (200)
+    teams = [100, 200]
 
-    # Create gold filter conditions for all roles and teams
+    # Use tqdm.write for logging to avoid progress bar interference
+    tqdm.write(f"\nProcessing batch with {original_count} rows")
+
+    # 1. Gold filter
     gold_filter_conditions = []
     for role in roles:
         for team in teams:
-            # Format column name based on whether we're using enhanced dataset or not
-            if is_temp_enhanced:
-                col = f"team_{team}_{role}_totalGold_at_900000"
-            else:
-                col = f"totalGold_at_900000_{role}_{team}"
-
+            col = f"team_{team}_{role}_totalGold_at_900000"
             if col in df.columns:
                 condition = df[col] < MIN_GOLD_15MIN
-                count = condition.sum()
-                if count > 0:
-                    print(
-                        f"Gold filter: {col} < {MIN_GOLD_15MIN} would remove {count} rows"
-                    )
                 gold_filter_conditions.append(condition)
-            else:
-                print(f"Warning: Column {col} not found in dataframe")
 
-    print(f"Found {len(gold_filter_conditions)} gold filter conditions")
-    # Combine conditions with OR
     if gold_filter_conditions:
-        # Use pd.concat only if there are multiple conditions
-        if len(gold_filter_conditions) > 1:
-            gold_filter = pd.concat(gold_filter_conditions, axis=1).any(axis=1)
-        else:
-            gold_filter = gold_filter_conditions[0]
-
-        gold_filtered_count = gold_filter.sum()
-        filter_counts["gold_filter"] = gold_filtered_count
-        print(f"Gold filter would remove {gold_filtered_count} rows")
+        gold_filter = pd.concat(gold_filter_conditions, axis=1).any(axis=1)
+        filter_counts["gold_filter"] = gold_filter.sum()
         df = df[~gold_filter]
-        print(f"After gold filter: {len(df)} rows")
 
-    # 2. Filter: More than MAX_DEATHS_15MIN deaths at 15 minutes
+    # 2. Deaths filter
     deaths_filter_conditions = []
     for role in roles:
         for team in teams:
-            if is_temp_enhanced:
-                col = f"team_{team}_{role}_deaths_at_900000"
-            else:
-                col = f"deaths_at_900000_{role}_{team}"
-
+            col = f"team_{team}_{role}_deaths_at_900000"
             if col in df.columns:
                 condition = df[col] > MAX_DEATHS_15MIN
-                count = condition.sum()
-                if count > 0:
-                    print(
-                        f"Deaths filter: {col} > {MAX_DEATHS_15MIN} would remove {count} rows"
-                    )
                 deaths_filter_conditions.append(condition)
-            else:
-                print(f"Warning: Column {col} not found in dataframe")
 
-    print(f"Found {len(deaths_filter_conditions)} deaths filter conditions")
     if deaths_filter_conditions:
-        # Use pd.concat only if there are multiple conditions
-        if len(deaths_filter_conditions) > 1:
-            deaths_filter = pd.concat(deaths_filter_conditions, axis=1).any(axis=1)
-        else:
-            deaths_filter = deaths_filter_conditions[0]
-
-        deaths_filtered_count = deaths_filter.sum()
-        filter_counts["deaths_filter"] = deaths_filtered_count
-        print(f"Deaths filter would remove {deaths_filtered_count} rows")
+        deaths_filter = pd.concat(deaths_filter_conditions, axis=1).any(axis=1)
+        filter_counts["deaths_filter"] = deaths_filter.sum()
         df = df[~deaths_filter]
-        print(f"After deaths filter: {len(df)} rows")
 
-    # 3. Filter: Less than MIN_CS_15MIN_NORMAL CS at 15 minutes (except support)
+    # 3. CS filter
     cs_filter_normal_conditions = []
     for role in roles:
-        if role != "UTILITY":  # Non-support roles
+        if role != "UTILITY":
             for team in teams:
-                if is_temp_enhanced:
-                    col = f"team_{team}_{role}_creepScore_at_900000"
-                else:
-                    col = f"creepScore_at_900000_{role}_{team}"
-
+                col = f"team_{team}_{role}_creepScore_at_900000"
                 if col in df.columns:
                     condition = df[col] < MIN_CS_15MIN_NORMAL
-                    count = condition.sum()
-                    if count > 0:
-                        print(
-                            f"CS filter: {col} < {MIN_CS_15MIN_NORMAL} would remove {count} rows"
-                        )
                     cs_filter_normal_conditions.append(condition)
-                else:
-                    print(f"Warning: Column {col} not found in dataframe")
 
-    print(f"Found {len(cs_filter_normal_conditions)} CS filter conditions")
     if cs_filter_normal_conditions:
-        # Use pd.concat only if there are multiple conditions
-        if len(cs_filter_normal_conditions) > 1:
-            cs_filter_normal = pd.concat(cs_filter_normal_conditions, axis=1).any(
-                axis=1
-            )
-        else:
-            cs_filter_normal = cs_filter_normal_conditions[0]
-
-        cs_normal_filtered_count = cs_filter_normal.sum()
-        filter_counts["cs_filter_normal"] = cs_normal_filtered_count
-        print(f"CS filter would remove {cs_normal_filtered_count} rows")
+        cs_filter_normal = pd.concat(cs_filter_normal_conditions, axis=1).any(axis=1)
+        filter_counts["cs_filter_normal"] = cs_filter_normal.sum()
         df = df[~cs_filter_normal]
-        print(f"After CS filter: {len(df)} rows")
 
-    # 4. Filter: Less than MIN_LEVEL_15MIN level at 15 minutes
+    # 4. Level filter
     level_filter_conditions = []
     for role in roles:
         for team in teams:
-            if is_temp_enhanced:
-                col = f"team_{team}_{role}_level_at_900000"
-            else:
-                col = f"level_at_900000_{role}_{team}"
-
+            col = f"team_{team}_{role}_level_at_900000"
             if col in df.columns:
                 condition = df[col] < MIN_LEVEL_15MIN
-                count = condition.sum()
-                if count > 0:
-                    print(
-                        f"Level filter: {col} < {MIN_LEVEL_15MIN} would remove {count} rows"
-                    )
                 level_filter_conditions.append(condition)
-            else:
-                print(f"Warning: Column {col} not found in dataframe")
 
-    print(f"Found {len(level_filter_conditions)} level filter conditions")
     if level_filter_conditions:
-        # Use pd.concat only if there are multiple conditions
-        if len(level_filter_conditions) > 1:
-            level_filter = pd.concat(level_filter_conditions, axis=1).any(axis=1)
-        else:
-            level_filter = level_filter_conditions[0]
-
-        level_filtered_count = level_filter.sum()
-        filter_counts["level_filter"] = level_filtered_count
-        print(f"Level filter would remove {level_filtered_count} rows")
+        level_filter = pd.concat(level_filter_conditions, axis=1).any(axis=1)
+        filter_counts["level_filter"] = level_filtered_count = level_filter.sum()
         df = df[~level_filter]
-        print(f"After level filter: {len(df)} rows")
 
+    # Print summary using tqdm.write
     total_filtered = original_count - len(df)
-    print(
-        f"Total rows filtered: {total_filtered} ({total_filtered/original_count*100:.2f}%)"
-    )
+    summary = [
+        f"Filtering summary:",
+        f"├─ Gold filter: {filter_counts['gold_filter']:,d} rows",
+        f"├─ Deaths filter: {filter_counts['deaths_filter']:,d} rows",
+        f"├─ CS filter: {filter_counts['cs_filter_normal']:,d} rows",
+        f"├─ Level filter: {filter_counts['level_filter']:,d} rows",
+        f"└─ Total: {total_filtered:,d} rows ({total_filtered/original_count*100:.1f}%)",
+    ]
+    tqdm.write("\n".join(summary))
 
     return df, filter_counts
 
@@ -369,12 +274,6 @@ def prepare_data(
         if len(df) <= 1:
             print(f"Skipping file {file_path} - insufficient samples ({len(df)} rows)")
             continue
-
-        # Note: Filtering has already been done in add_computed_columns
-        # So we remove this section:
-        # original_count = len(df)
-        # df, filter_counts = filter_outliers(df, is_temp_enhanced=True)
-        # ... filter tracking code ...
 
         # Encode categorical columns
         for col in CATEGORICAL_COLUMNS:
@@ -455,20 +354,23 @@ def add_computed_columns(input_files: List[str], output_dir: str) -> List[str]:
     with open(os.path.join(PREPARED_DATA_DIR, "patch_mapping.pkl"), "wb") as f:
         pickle.dump({"mapping": patch_mapping, "counts": patch_counts}, f)
 
-    # Track total filtering stats
-    total_filter_counts = {
-        "original_count": 0,
+    # Track cumulative stats
+    cumulative_stats = {
+        "total_raw": 0,  # Total games before patch filtering
+        "patch_filtered": 0,  # Games filtered due to old patches
+        "processed_in_patch": 0,  # Games processed after patch filtering
+        "filtered": 0,
         "gold_filter": 0,
         "deaths_filter": 0,
         "cs_filter_normal": 0,
         "level_filter": 0,
-        "total_filtered": 0,
     }
 
-    for file_path in tqdm(input_files, desc="Adding computed columns"):
+    pbar = tqdm(input_files, desc="Adding computed columns")
+    for file_path in pbar:
         df = load_data(file_path)
         original_count = len(df)
-        total_filter_counts["original_count"] += original_count
+        cumulative_stats["total_raw"] += original_count
 
         # Calculate raw patch numbers
         raw_patches = df["gameVersionMajorPatch"] * 50 + df["gameVersionMinorPatch"]
@@ -477,20 +379,39 @@ def add_computed_columns(input_files: List[str], output_dir: str) -> List[str]:
         df["numerical_patch"] = raw_patches.map(lambda x: patch_mapping.get(x, 0))
         df = df[df["numerical_patch"] > 0]  # Remove games from old patches
 
+        # Track how many games were filtered due to patches
+        cumulative_stats["patch_filtered"] += original_count - len(df)
+
         # Skip empty dataframes
         if len(df) == 0:
             continue
 
+        # Track games that are in the valid patch range
+        games_in_patch = len(df)
+        cumulative_stats["processed_in_patch"] += games_in_patch
+
         # Apply filtering before adding computed columns
         print(f"\nFiltering file: {file_path}")
-        df, filter_counts = filter_outliers(df, is_temp_enhanced=False)
+        df, filter_counts = filter_outliers(df)
 
-        # Update total filter counts
-        for key in filter_counts:
-            if key in total_filter_counts:
-                total_filter_counts[key] += filter_counts[key]
+        # Update cumulative stats (only for games within patch range)
+        cumulative_stats["filtered"] += games_in_patch - len(df)
+        for key in ["gold_filter", "deaths_filter", "cs_filter_normal", "level_filter"]:
+            cumulative_stats[key] += filter_counts[key]
 
-        total_filter_counts["total_filtered"] += original_count - len(df)
+        # Update progress bar description with cumulative stats
+        filtered_pct = (
+            (
+                cumulative_stats["filtered"]
+                / cumulative_stats["processed_in_patch"]
+                * 100
+            )
+            if cumulative_stats["processed_in_patch"] > 0
+            else 0
+        )
+        pbar.set_description(
+            f"Processed (in patch): {cumulative_stats['processed_in_patch']:,d} | Filtered: {filtered_pct:.1f}%"
+        )
 
         # Skip if no data left after filtering
         if len(df) <= 1:
@@ -515,24 +436,22 @@ def add_computed_columns(input_files: List[str], output_dir: str) -> List[str]:
         # Clear memory
         del df
 
-    # Print filter statistics
-    print("\n=== Filter Statistics ===")
-    total_original = total_filter_counts["original_count"]
-    if total_original > 0:
-        print(f"Original sample count: {total_original}")
-        print(
-            f"Total filtered: {total_filter_counts['total_filtered']} ({total_filter_counts['total_filtered']/total_original*100:.2f}%)"
-        )
-        print("\nBreakdown by filter rule:")
-        for rule in [
-            "gold_filter",
-            "deaths_filter",
-            "cs_filter_normal",
-            "level_filter",
-        ]:
-            count = total_filter_counts[rule]
-            if count > 0:
-                print(f"- {rule}: {count} games ({count/total_original*100:.2f}%)")
+    # Print final cumulative stats using tqdm.write
+    if cumulative_stats["total_raw"] > 0:
+        final_summary = [
+            f"\nFinal filtering statistics:",
+            f"├─ Total raw games: {cumulative_stats['total_raw']:,d}",
+            f"├─ Games from old patches: {cumulative_stats['patch_filtered']:,d} ({cumulative_stats['patch_filtered']/cumulative_stats['total_raw']*100:.1f}%)",
+            f"├─ Games in recent patches: {cumulative_stats['processed_in_patch']:,d}",
+            f"├─ Filtering results (for games in recent patches only):",
+            f"│  ├─ Gold filter: {cumulative_stats['gold_filter']:,d} games ({cumulative_stats['gold_filter']/cumulative_stats['processed_in_patch']*100:.1f}%)",
+            f"│  ├─ Deaths filter: {cumulative_stats['deaths_filter']:,d} games ({cumulative_stats['deaths_filter']/cumulative_stats['processed_in_patch']*100:.1f}%)",
+            f"│  ├─ CS filter: {cumulative_stats['cs_filter_normal']:,d} games ({cumulative_stats['cs_filter_normal']/cumulative_stats['processed_in_patch']*100:.1f}%)",
+            f"│  ├─ Level filter: {cumulative_stats['level_filter']:,d} games ({cumulative_stats['level_filter']/cumulative_stats['processed_in_patch']*100:.1f}%)",
+            f"│  └─ Total filtered: {cumulative_stats['filtered']:,d} games ({cumulative_stats['filtered']/cumulative_stats['processed_in_patch']*100:.1f}%)",
+            f"└─ Final games kept: {cumulative_stats['processed_in_patch'] - cumulative_stats['filtered']:,d}",
+        ]
+        tqdm.write("\n".join(final_summary))
 
     return new_files
 
@@ -561,14 +480,6 @@ def main():
 
     print("Adding computed columns...")
     enhanced_files = add_computed_columns(input_files, temp_dir)
-
-    # If filtering is enabled, print the filter parameters
-    if not args.skip_filtering:
-        print("\n=== Outlier/Griefer Filtering Parameters ===")
-        print(f"Minimum gold at 15 minutes: {MIN_GOLD_15MIN}")
-        print(f"Maximum deaths at 15 minutes: {MAX_DEATHS_15MIN}")
-        print(f"Minimum CS at 15 minutes (normal roles): {MIN_CS_15MIN_NORMAL}")
-        print(f"Minimum level at 15 minutes: {MIN_LEVEL_15MIN}")
 
     print("Creating encoders...")
     encoders = create_encoders(enhanced_files)
