@@ -39,9 +39,10 @@ export default function HomePage() {
           <div className="grid gap-8 md:grid-cols-2 items-center">
             <div>
               <p className="text-lg">
-                <span className="brand-text">LoLDraftAI</span> is the best draft
-                tool because it doesn&apos;t rely on champion statistics to
-                predict the game.
+                <span className="brand-text">LoLDraftAI</span> is the best
+                League of Legends draft tool because it doesn&apos;t rely on
+                champion statistics to predict the game. Our AI-powered LoL
+                draft analyzer gives you an edge in champion select.
               </p>
               <p className="text-lg mt-8">
                 Instead, the <span className="brand-text">LoLDraftAI</span>{" "}
@@ -59,7 +60,7 @@ export default function HomePage() {
                   href="/blog/draftgap-vs-loldraftai-comparison"
                   className="text-primary hover:underline"
                 >
-                  See how LoLDraftAI outperforms other tools like DraftGap in
+                  See how our draft AI outperforms other tools like DraftGap in
                   our detailed comparison
                 </Link>{" "}
                 (65.6% vs 56.5% prediction accuracy).
