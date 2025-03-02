@@ -44,10 +44,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://loldraftai.com"),
-  title: {
-    default: "LoLDraftAI | LoL Draft Analyzer and Helper",
-    template: "%s | LoLDraftAI",
-  },
+  title: "LoLDraftAI | LoL Draft Analyzer and Helper",
   description:
     "LoLDraftAI is the most accurate League of Legends draft tool with AI-powered analysis for better draft predictions and team composition insights.",
   keywords: [
