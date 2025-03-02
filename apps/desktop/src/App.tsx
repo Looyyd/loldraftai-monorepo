@@ -300,7 +300,7 @@ function App() {
       {/* Main content - hidden on mobile */}
       <div className="hidden md:block">
         <div className="container mx-auto mt-8 font-sans">
-          <h1 className="brand-text text-5xl font-extrabold tracking-tight leading-tight text-primary text-center mb-8">
+          <h1 className="text-5xl font-extrabold tracking-tight leading-tight text-primary text-center mb-8">
             LoLDraftAI Analysis
           </h1>
           <div className="mx-auto">

@@ -22,7 +22,8 @@ const config = {
     },
     extend: {
       fontFamily: {
-        sans: ['var(--font-chakra-petch)', ...fontFamily.sans],
+        sans: ['var(--font-inter)', ...fontFamily.sans],
+        brand: ['var(--font-chakra-petch)', ...fontFamily.sans],
       },
       colors: {
         border: "hsl(var(--border))",

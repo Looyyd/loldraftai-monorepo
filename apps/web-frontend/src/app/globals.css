@@ -7,6 +7,10 @@
     --radius: 0.5rem;
   }
 
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-brand;
+  }
+
   .dark {
     --background: 224 71% 4%;
     --foreground: 213 31% 91%;
@@ -40,7 +44,7 @@
   }
 
   .brand-text {
-    @apply font-bold;
+    @apply font-brand font-bold;
     background: linear-gradient(to right, hsl(220 70% 50%), hsl(160 60% 45%));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -53,11 +57,11 @@
   }
 
   .prose h2 {
-    @apply text-2xl font-bold mt-8 mb-4 text-primary;
+    @apply text-2xl font-brand font-bold mt-8 mb-4 text-primary;
   }
 
   .prose h3 {
-    @apply text-xl font-bold mt-6 mb-3 text-primary;
+    @apply text-xl font-brand font-bold mt-6 mb-3 text-primary;
   }
 
   .prose p {

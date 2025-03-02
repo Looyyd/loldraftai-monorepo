@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Chakra_Petch } from "next/font/google";
+import { Chakra_Petch, Inter } from "next/font/google";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import {
@@ -22,10 +22,15 @@ import {
 } from "@draftking/ui/components/ui/dropdown-menu";
 import { Menu } from "lucide-react";
 
-const font = Chakra_Petch({
+const chakraPetch = Chakra_Petch({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-chakra-petch",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
 });
 
 // Add this near your other constants
@@ -166,7 +171,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body className={`${font.variable} font-sans`}>
+      <body className={`${chakraPetch.variable} ${inter.variable} font-sans`}>
         <ThemeProvider>
           <ClarityProvider projectId={CLARITY_PROJECT_ID} />
           <div className="flex min-h-screen flex-col bg-background text-foreground">

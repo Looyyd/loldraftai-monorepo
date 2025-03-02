@@ -43,7 +43,7 @@ export function Layout() {
   }, []); // Run once on component mount
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex min-h-screen flex-col bg-background text-foreground font-sans">
       <main className="flex-1">
         <App />
       </main>

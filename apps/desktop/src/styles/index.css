@@ -8,6 +8,10 @@
   }
 
   body {
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
     font-family: "Chakra Petch", sans-serif;
   }
 
@@ -44,7 +48,7 @@
   }
 
   .brand-text {
-    @apply font-bold;
+    @apply font-brand font-bold;
     background: linear-gradient(to right, hsl(220 70% 50%), hsl(160 60% 45%));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
