@@ -18,6 +18,7 @@ interface AnalysisParentProps {
   favorites: FavoriteChampions;
   remainingChampions: Champion[];
   analysisTrigger: number;
+  resetAnalysisTrigger?: number;
   currentPatch: string;
   patches: string[];
   setCurrentPatch: (patch: string) => void;

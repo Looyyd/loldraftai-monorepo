@@ -1,7 +1,7 @@
 {
   "name": "@draftking/desktop",
   "private": true,
-  "version": "0.1.33",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

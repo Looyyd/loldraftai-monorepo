@@ -40,6 +40,7 @@ export default function Draft() {
   const [teamOne, setTeamOne] = useState<Team>(emptyTeam);
   const [teamTwo, setTeamTwo] = useState<Team>(emptyTeam);
   const [analysisTrigger] = useState(0);
+  const [resetAnalysisTrigger, setResetAnalysisTrigger] = useState(0);
   const [selectedSpot, setSelectedSpot] = useState<SelectedSpot | null>(null);
   const [favorites, setFavorites] = usePersistedState<FavoriteChampions>(
     "favorites",
@@ -65,6 +66,7 @@ export default function Draft() {
     setTeamOne(emptyTeam);
     setTeamTwo(emptyTeam);
     setSelectedSpot(null);
+    setResetAnalysisTrigger(prev => prev + 1);
   };
 
   const handleSpotSelection = (index: ChampionIndex, team: TeamIndex) => {
@@ -223,6 +225,7 @@ export default function Draft() {
               favorites={favorites}
               remainingChampions={remainingChampions}
               analysisTrigger={analysisTrigger}
+              resetAnalysisTrigger={resetAnalysisTrigger}
             />
           </div>
         </div>

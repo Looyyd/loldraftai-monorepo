@@ -18,6 +18,7 @@ interface AnalysisParentProps {
   favorites: FavoriteChampions;
   remainingChampions: Champion[];
   analysisTrigger: number;
+  resetAnalysisTrigger?: number;
 }
 
 const AnalysisParent = (props: AnalysisParentProps) => {
@@ -36,7 +37,9 @@ const AnalysisParent = (props: AnalysisParentProps) => {
       BestChampionSuggestion={BestChampionSuggestion}
       elo={elo}
       setElo={setElo}
-      baseApiUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://loldraftai.com"}
+      baseApiUrl={
+        process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://loldraftai.com"
+      }
     />
   );
 };

@@ -38,6 +38,7 @@ interface AnalysisParentProps {
   favorites: FavoriteChampions;
   remainingChampions: Champion[];
   analysisTrigger: number;
+  resetAnalysisTrigger?: number;
   elo: Elo;
   setElo: (elo: Elo) => void;
   currentPatch: string;
@@ -127,6 +128,7 @@ export const AnalysisParent = ({
   favorites,
   remainingChampions,
   analysisTrigger,
+  resetAnalysisTrigger = 0,
   elo,
   setElo,
   currentPatch,
@@ -153,6 +155,14 @@ export const AnalysisParent = ({
     setShowAnalysis(false);
   }, [team1, team2, elo]);
   */
+
+  useEffect(() => {
+    if (resetAnalysisTrigger > 0) {
+      setShowChampionSuggestion(false);
+      setShowAnalysis(false);
+      setSuggestionSelectedSpot(null);
+    }
+  }, [resetAnalysisTrigger]);
 
   useEffect(() => {
     if (analysisTrigger > 0) {

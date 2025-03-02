@@ -64,6 +64,7 @@ function App() {
     useState<Champion[]>(champions);
   const [isLiveTracking, setIsLiveTracking] = useState(false);
   const [bannedChampions, setBannedChampions] = useState<Champion[]>([]);
+  const [resetAnalysisTrigger, setResetAnalysisTrigger] = useState(0);
 
   // Store
   const { currentPatch, patches, setCurrentPatch, setPatchList } =
@@ -121,6 +122,7 @@ function App() {
     setSelectedSpot(null);
     setBannedChampions([]);
     setRemainingChampions(champions);
+    setResetAnalysisTrigger((prev) => prev + 1);
   };
 
   useEffect(() => {
@@ -440,6 +442,7 @@ function App() {
                 favorites={favorites}
                 remainingChampions={remainingNonBannedChampions}
                 analysisTrigger={0}
+                resetAnalysisTrigger={resetAnalysisTrigger}
                 currentPatch={currentPatch}
                 patches={patches}
                 setCurrentPatch={setCurrentPatch}
