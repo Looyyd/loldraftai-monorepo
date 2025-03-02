@@ -77,15 +77,15 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
               <li key={index}>
                 <div
                   className={clsx(
-                    "flex justify-center p-1",
+                    "flex justify-center p-1 cursor-pointer",
                     // Base styles
                     "bg-opacity-0 rounded-lg",
                     // Selected state using team colors
                     {
                       "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]":
                         isSelected,
-                      // Modified hover state - removed scale effect
                       "hover:bg-white/5": !isSelected,
+                      "hover:scale-110": !isSelected,
                     },
                     // Team-specific colors when selected
                     {
@@ -96,13 +96,16 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                     }
                   )}
                   onClick={() => handleSpotClick(championIndex)}
+                  onContextMenu={
+                    teamMember
+                      ? (e) => handleContextMenu(e, championIndex)
+                      : undefined
+                  }
                 >
                   <div
                     className={clsx("flex items-center ", {
                       "flex-row": is_first_team,
                       "flex-row-reverse": !is_first_team,
-                      // Add hover scale effect to inner div instead
-                      "hover:scale-110": !isSelected,
                     })}
                   >
                     {!teamMember ? (
@@ -113,12 +116,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                         height={80}
                       />
                     ) : (
-                      <div
-                        onContextMenu={(e) =>
-                          handleContextMenu(e, championIndex)
-                        }
-                        className="flex cursor-pointer items-center justify-between"
-                      >
+                      <div className="flex items-center justify-between">
                         <ImageComponent
                           src={`/icons/champions/${teamMember.icon}`}
                           alt={teamMember.name}
