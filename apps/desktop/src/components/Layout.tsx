@@ -52,8 +52,16 @@ export function Layout() {
         <div className="container p-4 text-center text-sm text-muted-foreground mx-auto">
           <div className="mb-2">
             Last model update: {lastModified} on patch {currentPatch}. After a
-            new patch, expect a few days of delay before an update. Contact
-            looyyd on Discord for bug reports or feature requests.
+            new patch, expect a few days of delay before an update.{" "}
+            <a
+              href="https://discord.gg/MpbtNEwTT7"
+              className="text-blue-400 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Join our Discord
+            </a>{" "}
+            for bug reports or feature requests.
           </div>
           <div className="text-xs">
             LoLDraftAI isn't endorsed by Riot Games and doesn't reflect the
