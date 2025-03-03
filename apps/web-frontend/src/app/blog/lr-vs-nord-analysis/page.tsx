@@ -11,7 +11,7 @@ export default function LRvsNORDAnalysis() {
       date="March 3, 2025"
     >
       <p>
-        While LosRatones(LR) showed an outstanding performance in the{" "}
+        While Los Ratones(LR) showed an outstanding performance in the{" "}
         <Link
           href="https://gol.gg/game/stats/64748/page-summary/"
           target="_blank"
