@@ -22,6 +22,14 @@ const BrandedText = ({ text }: { text: string }) => {
 
 const blogPosts: BlogPost[] = [
   {
+    title:
+      "LR vs NORD: How LoLDraftAI Can Help to Improve Draft Preparation In Pro Play",
+    description:
+      "Analysis of how LoLDraftAI could have helped LosRatones make better champion selections in their NLC 2025 finals match against NORD, focusing on the suboptimal Rakan pick.",
+    date: "2025-03-03",
+    slug: "lr-vs-nord-analysis",
+  },
+  {
     title: "DraftGap vs LoLDraftAI: A Detailed Comparison",
     description:
       "Through statistical validation, we've found that LoLDraftAI consistently outperforms DraftGap in prediction accuracy (65.6% vs 56.5% on unseen data).",
