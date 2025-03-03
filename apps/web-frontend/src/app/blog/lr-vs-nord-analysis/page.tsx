@@ -131,7 +131,7 @@ export default function LRvsNORDAnalysis() {
       </ul>
       <p>
         Here are the meta support suggestions, filtering out banned or picked
-        champions and more "solo queue" picks such as Xerath or Shaco:
+        champions and more &quot;solo queue&quot; picks such as Xerath or Shaco:
       </p>
 
       <div className="overflow-x-auto my-6">
@@ -336,7 +336,7 @@ export default function LRvsNORDAnalysis() {
               <td className="border border-gray-300 px-4 py-2">56.7%</td>
             </tr>
             <tr>
-              <td className="border border-gray-300 px-4 py-2">Vel'Koz</td>
+              <td className="border border-gray-300 px-4 py-2">Vel&apos;Koz</td>
               <td className="border border-gray-300 px-4 py-2">55.7%</td>
             </tr>
             <tr>
