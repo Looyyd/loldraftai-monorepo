@@ -41,8 +41,7 @@ export default function HomePage() {
               <p className="text-lg">
                 <span className="brand-text">LoLDraftAI</span> is the best
                 League of Legends draft tool because it doesn&apos;t rely on
-                champion statistics to predict the game. Our AI-powered LoL
-                draft analyzer gives you an edge in champion select.
+                champion statistics to predict the game.
               </p>
               <p className="text-lg mt-8">
                 Instead, the <span className="brand-text">LoLDraftAI</span>{" "}
