@@ -25,14 +25,19 @@ def get_optimizer_grouped_parameters(
     nodecay_params = []
 
     for name, param in param_dict.items():
+        # Apply weight decay to patch modulation parameters
+        if "patch_modulation.weight" in name:
+            decay_params.append(param)
+            continue
+
         # No weight decay for:
-        # 1. Standard embedding layers (embeddings.*.weight and champion_embedding.weight)
+        # 1. Standard embedding layers (embeddings.*.weight and champion_base.weight)
         # 2. All bias terms
         # 3. All normalization layers
         # source: https://github.com/karpathy/minGPT/pull/24#issuecomment-679316025
         if (
             "embeddings." in name
-            or "champion_embedding." in name
+            or "champion_base.weight" in name  # Changed from champion_embedding
             or "pos_embedding" in name
             or "bias" in name
             or "norm" in name
@@ -58,6 +63,17 @@ def get_optimizer_grouped_parameters(
     print(
         f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters"
     )
+
+    # Print which embedding params get decay vs no decay
+    print("\nEmbedding parameters decay status:")
+    for name, param in param_dict.items():
+        if "embed" in name.lower() or "champion" in name.lower():
+            decay_status = (
+                "WITH decay"
+                if any(id(param) == id(p) for p in decay_params)
+                else "NO decay"
+            )
+            print(f"  {name}: {decay_status}")
 
     return optim_groups
 

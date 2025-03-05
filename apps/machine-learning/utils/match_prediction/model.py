@@ -63,11 +63,62 @@ class MLPBlock(nn.Module):
         return x
 
 
+class PatchModulatedChampions(nn.Module):
+    def __init__(
+        self,
+        num_champions: int,
+        num_patches: int,
+        embed_dim: int,
+        modulation_scale: float = 0.2,
+    ):
+        super().__init__()
+        # Base champion embedding (unchanged from original)
+        self.champion_base = nn.Embedding(num_champions, embed_dim)
+
+        # Patch-specific modulation for each champion
+        # We use a smaller scale for modulation to ensure it's minimal by default
+        self.modulation_scale = modulation_scale
+        self.patch_modulation = nn.Embedding(num_patches * num_champions, embed_dim)
+
+        # Initialize modulation embeddings to small values
+        # This ensures they start with minimal effect
+        nn.init.normal_(self.patch_modulation.weight, mean=0.0, std=0.02)
+
+    def forward(
+        self, champion_ids: torch.Tensor, patch_ids: torch.Tensor
+    ) -> torch.Tensor:
+        # Get base champion embeddings
+        # Shape: [batch_size, num_positions, embed_dim]
+        base_embeds = self.champion_base(champion_ids)
+
+        # Create combined patch-champion indices
+        # This creates a unique index for each (champion, patch) pair
+        batch_size, num_positions = champion_ids.shape
+        patch_expanded = patch_ids.unsqueeze(1).expand(-1, num_positions)
+        combined_indices = (
+            patch_expanded * self.champion_base.num_embeddings + champion_ids
+        )
+
+        # Get modulation values
+        # Shape: [batch_size, num_positions, embed_dim]
+        modulations = self.patch_modulation(combined_indices)
+
+        # Apply modulation as a multiplicative factor
+        # Using tanh ensures output is in range [-1, 1], then scaled to be smaller
+        # The 1 + modulation structure means by default we stay close to original embedding
+        modulated_embeds = base_embeds * (
+            1 + self.modulation_scale * torch.tanh(modulations)
+        )
+
+        return modulated_embeds
+
+
 class Model(nn.Module):
     def __init__(
         self,
         num_categories,
         num_champions,
+        num_patches,
         embed_dim=64,
         hidden_dims=[256, 128, 64],
         dropout=0.2,
@@ -81,8 +132,13 @@ class Model(nn.Module):
         for col in CATEGORICAL_COLUMNS:
             self.embeddings[col] = nn.Embedding(num_categories[col], embed_dim)
 
-        # Champion embeddings
-        self.champion_embedding = nn.Embedding(num_champions, embed_dim)
+        # Modified champion embeddings with patch awareness
+        self.champion_embedding = PatchModulatedChampions(
+            num_champions=num_champions,
+            num_patches=num_patches,
+            embed_dim=embed_dim,
+            modulation_scale=0.2,  # Controls how much patch can affect champions
+        )
 
         # Project numerical features
         self.numerical_projection = (
@@ -146,13 +202,16 @@ class Model(nn.Module):
             embed = self.embeddings[col](features[col])
             embeddings_list.append(embed)
 
-        # Process champion features
+        # Process champion features with patch awareness
         champion_ids = features["champion_ids"]
-        champion_embeds = self.champion_embedding(champion_ids)
+        patch_ids = features["numerical_patch"].long()  # Convert to long indices
 
-        # Flatten champion embeddings
-        champion_features = champion_embeds.view(batch_size, -1)
-        embeddings_list.append(champion_features)
+        # Get patch-modulated champion embeddings
+        champion_embeds = self.champion_embedding(champion_ids, patch_ids)
+
+        # Reshape champion embeddings for the MLP
+        champion_embeds_flat = champion_embeds.reshape(batch_size, -1)
+        embeddings_list.append(champion_embeds_flat)
 
         # Process numerical features
         if self.numerical_projection is not None and NUMERICAL_COLUMNS:

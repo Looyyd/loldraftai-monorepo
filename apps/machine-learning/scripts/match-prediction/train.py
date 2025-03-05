@@ -213,13 +213,14 @@ def init_model(
     model = Model(
         num_categories=num_categories,
         num_champions=num_champions,
+        num_patches=4,  # TODO: don't hard code it
         embed_dim=config.embed_dim,
         hidden_dims=config.hidden_dims,
         dropout=config.dropout,
     )
 
-    # Apply the champion embeddings
-    model.champion_embedding.weight.data = embeddings
+    # Apply the champion embeddings to the base embedding inside PatchModulatedChampions
+    model.champion_embedding.champion_base.weight.data = embeddings
 
     if continue_training:
         load_path = load_path or MODEL_PATH
