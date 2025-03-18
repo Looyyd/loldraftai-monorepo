@@ -5,18 +5,14 @@ from pathlib import Path
 
 from utils.match_prediction.model import Model
 from utils.match_prediction.column_definitions import COLUMNS, ColumnType
-from utils.match_prediction import (
-    MODEL_PATH,
-    MODEL_CONFIG_PATH,
-)
+from utils.match_prediction import MODEL_PATH, MODEL_CONFIG_PATH, ONNX_MODEL_PATH
 
 
 def preprocess_sample_input():
     """Create a sample input for model tracing with realistic data"""
     sample_input = {}
 
-    # Add champion_ids using realistic champion IDs - common in actual gameplay
-    # These IDs represent popular champions likely seen in real matches
+    # Add champion_ids using realistic champion IDs
     sample_input["champion_ids"] = torch.tensor(
         [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]], dtype=torch.long
     )
@@ -24,22 +20,12 @@ def preprocess_sample_input():
     # Add other required inputs from COLUMNS
     for col, col_def in COLUMNS.items():
         if col != "champion_ids":  # Already handled
-            if col_def.column_type == ColumnType.CATEGORICAL:
+            if col_def.column_type == ColumnType.KNOWN_CATEGORICAL:
+                # Use 0 as default value for categorical features
                 sample_input[col] = torch.tensor([0], dtype=torch.long)
-            elif col_def.column_type == ColumnType.NUMERICAL:
-                # Use more realistic values for numerical features
-                if col == "numerical_elo":
-                    sample_input[col] = torch.tensor(
-                        [0], dtype=torch.float
-                    )  # Normalized ELO value
-                elif col == "numerical_patch":
-                    sample_input[col] = torch.tensor(
-                        [0], dtype=torch.float
-                    )  # Normalized patch value
-                else:
-                    sample_input[col] = torch.tensor([0.0], dtype=torch.float)
-            elif col_def.column_type == ColumnType.LIST and col != "champion_ids":
-                sample_input[col] = torch.tensor([[0.0]], dtype=torch.float)
+            elif col_def.column_type == ColumnType.SPECIAL and col == "patch":
+                # Use a reasonable patch number
+                sample_input[col] = torch.tensor([0], dtype=torch.long)
 
     return sample_input
 
@@ -55,8 +41,6 @@ def main():
     # Initialize the model
     print("Initializing PyTorch model...")
     model = Model(
-        num_categories=model_params["num_categories"],
-        num_champions=model_params["num_champions"],
         embed_dim=model_params["embed_dim"],
         dropout=model_params["dropout"],
         hidden_dims=model_params["hidden_dims"],
@@ -64,7 +48,12 @@ def main():
 
     # Load weights
     print(f"Loading model weights from {MODEL_PATH}")
-    model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu", weights_only=True))
+    state_dict = torch.load(MODEL_PATH, map_location="cpu")
+    # Remove '_orig_mod.' prefix from state dict keys if present
+    fixed_state_dict = {
+        k.replace("_orig_mod.", ""): state_dict[k] for k in state_dict.keys()
+    }
+    model.load_state_dict(fixed_state_dict)
     model.eval()
 
     # Create sample input for tracing
@@ -72,7 +61,7 @@ def main():
     sample_input = preprocess_sample_input()
 
     # Output path
-    onnx_path = Path("data/models/match_outcome_model.onnx")
+    onnx_path = Path(ONNX_MODEL_PATH)
     print(f"Will export ONNX model to {onnx_path}")
 
     # Make sure the directory exists

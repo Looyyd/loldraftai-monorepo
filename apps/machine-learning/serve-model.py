@@ -15,13 +15,13 @@ from fastapi.security import APIKeyHeader
 
 from utils.match_prediction.column_definitions import COLUMNS, ColumnType
 from utils.match_prediction import (
-    ENCODERS_PATH,
-    NUMERICAL_STATS_PATH,
+    CHAMPION_ID_ENCODER_PATH,
     TASK_STATS_PATH,
     MODEL_CONFIG_PATH,
     ONNX_MODEL_PATH,
     POSITIONS,
     PREPARED_DATA_DIR,
+    PATCH_MAPPING_PATH,
 )
 
 
@@ -32,26 +32,33 @@ class APIInput(BaseModel):
     _mapped_patch: int | None = None
 
     @property
-    def numerical_patch(self) -> int:
+    def mapped_patch(self) -> int:
         """Convert patch string (e.g., '14.22') to numerical format"""
         if self._mapped_patch is not None:
             return self._mapped_patch
 
+        latest_patch = sorted(patch_mapping.keys())[-1]
+        latest_mapped_patch = patch_mapping[latest_patch]
         if not self.patch:
             # Find the latest patch from patch_mapping
-            latest_patch = max(patch_mapping.keys())
-            return int(latest_patch)
+            return latest_mapped_patch
 
-        major, minor = self.patch.split(".")
-        raw_patch = int(major) * 50 + int(minor)
         # Store the mapped patch value
-        self._mapped_patch = patch_mapping.get(float(raw_patch), 0)
+        self._mapped_patch = patch_mapping.get(self.patch, latest_mapped_patch)
         return self._mapped_patch
 
+    # TODO: could be removed(but also in frontend), artifact of old model architecture
+    @property
+    def elo(self) -> int:
+        return self.numerical_elo
 
-class ModelInput(APIInput):
+
+class ModelInput(BaseModel):
     champion_ids: List[int]
-    pass
+    elo: int
+    patch: int
+    # For now we default to ranked solo/duo, see column_definitions.py for mapping
+    queue_type: int = 0
 
 
 class InDepthPrediction(BaseModel):
@@ -72,18 +79,16 @@ class ModelMetadata(BaseModel):
 def api_input_to_model_input(api_input: APIInput) -> ModelInput:
     try:
         # Convert -1 to "UNKNOWN" and encode all champion IDs in one go
-        encoded_champion_ids = label_encoders["champion_ids"].transform(
+        encoded_champion_ids = champion_id_encoder.transform(
             ["UNKNOWN" if id == -1 else id for id in api_input.champion_ids]
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid champion IDs: {str(e)}")
 
-    # Create a dictionary from the API input, excluding 'champion_ids'
-    input_dict = api_input.model_dump(exclude={"champion_ids"})
-
     return ModelInput(
-        **input_dict,
         champion_ids=encoded_champion_ids.tolist(),  # Use encoded champion IDs
+        patch=api_input.mapped_patch,
+        elo=api_input.elo,
     )
 
 
@@ -101,22 +106,15 @@ app.add_middleware(
 print("Loading resources...")
 
 # Load label encoders
-with open(ENCODERS_PATH, "rb") as f:
-    label_encoders = pickle.load(f)
-
-# Load numerical stats for normalization
-with open(NUMERICAL_STATS_PATH, "rb") as f:
-    numerical_stats = pickle.load(f)
+with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
+    champion_id_encoder = pickle.load(f)["mapping"]
 
 # Load task statistics for denormalization
 with open(TASK_STATS_PATH, "rb") as f:
     task_stats = pickle.load(f)
 
-with open(MODEL_CONFIG_PATH, "rb") as f:
-    model_params = pickle.load(f)
-
 # Get patch mapping
-with open(Path(PREPARED_DATA_DIR) / "patch_mapping.pkl", "rb") as f:
+with open(PATCH_MAPPING_PATH, "rb") as f:
     patch_mapping = pickle.load(f)["mapping"]
 
 # Create the ONNX Runtime session with optimized settings
@@ -187,47 +185,21 @@ def preprocess_input(input_data: ModelInput) -> Dict[str, np.ndarray]:
 
     # Process categorical features - these should be 1D arrays
     for col, col_def in COLUMNS.items():
-        if col_def.column_type == ColumnType.CATEGORICAL:
-            value = getattr(input_data, col, None)
-            if not value or (
-                hasattr(label_encoders.get(col, {}), "classes_")
-                and value not in label_encoders[col].classes_
-            ):
-                value = "UNKNOWN"
+        # Process list features - champion_ids is a 2D array
+        if col == "champion_ids":
+            champion_ids = getattr(input_data, col, [])
+            # Make sure it's a 2D array with shape [1, N]
             processed_input[col] = np.array(
-                [label_encoders[col].transform([value])[0]],
+                [champion_ids],
                 dtype=np.int64,
             )
-
-        # Process numerical features - these should be 1D arrays
-        elif col_def.column_type == ColumnType.NUMERICAL:
-            value = getattr(input_data, col, 0)
-            mean = numerical_stats["means"].get(col, 0.0)
-            std = numerical_stats["stds"].get(col, 1.0)
-            if std == 0:
-                normalized_value = 0.0  # Avoid division by zero
-            else:
-                normalized_value = (value - mean) / std
-            processed_input[col] = np.array(
-                [normalized_value],
-                dtype=np.float32,
-            )
-
-        # Process list features - champion_ids is a 2D array
-        elif col_def.column_type == ColumnType.LIST:
-            if col == "champion_ids":
-                champion_ids = getattr(input_data, col, [])
-                # Make sure it's a 2D array with shape [1, N]
-                processed_input[col] = np.array(
-                    [champion_ids],
-                    dtype=np.int64,
-                )
-            else:
-                list_values = getattr(input_data, col, [])
-                processed_input[col] = np.array(
-                    [list_values],
-                    dtype=np.float32,
-                )
+        # Process known categorical features
+        elif col_def.column_type == ColumnType.KNOWN_CATEGORICAL:
+            value = getattr(input_data, col)
+            processed_input[col] = np.array([value], dtype=np.int64)
+        # Handle special columns (patch)
+        elif col == "patch":
+            processed_input[col] = np.array([input_data.patch], dtype=np.int64)
 
     return processed_input
 
@@ -263,7 +235,7 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
     base_input = api_input_to_model_input(api_input)
 
     # Get the unknown champion ID
-    unknown_champion_id = label_encoders["champion_ids"].transform(["UNKNOWN"])[0]
+    unknown_champion_id = champion_id_encoder.transform(["UNKNOWN"])[0]
 
     # Create masked versions only for known champions
     masked_inputs = []
@@ -330,12 +302,10 @@ async def get_metadata(api_key: str = Depends(verify_api_key)):
     model_timestamp = datetime.fromtimestamp(os.path.getmtime(str(ONNX_MODEL_PATH)))
 
     # Load patch information
-    patch_info = pickle.load(open(Path(PREPARED_DATA_DIR) / "patch_mapping.pkl", "rb"))
+    patch_info = pickle.load(open(PATCH_MAPPING_PATH, "rb"))
 
     # Convert raw patch numbers to version strings and sort them
-    patches = sorted(
-        f"{patch // 50}.{patch % 50:02d}" for patch in patch_info["mapping"].keys()
-    )
+    patches = sorted(patch_info["mapping"].keys())
 
     return ModelMetadata(patches=patches, last_modified=model_timestamp.isoformat())
 
@@ -447,91 +417,6 @@ async def predict_batch(inputs: List[APIInput], api_key: str = Depends(verify_ap
         WinratePrediction(win_probability=result["win_probability"])
         for result in results
     ]
-
-
-# @app.get("/benchmark-batch-sizes")
-# async def benchmark_batch_sizes(api_key: str = Depends(verify_api_key)):
-# """Test different batch sizes to find the optimal one for the current environment"""
-# batch_sizes = [1, 2, 4, 8, 16, 32]
-# results = {}
-#
-## Create a sample input based on typical example
-# sample_input = ModelInput(
-# champion_ids=label_encoders["champion_ids"]
-# .transform([36, 5, 61, 147, 235, 163, 427, 910, 21, 111])
-# .tolist(),
-# numerical_elo=1,
-# patch="14.23",
-# )
-#
-## Preprocess the sample input
-# processed_input = preprocess_input(sample_input)
-#
-## Test each batch size
-# for batch_size in batch_sizes:
-## Create batched input with correct shape handling
-# batched_input = {}
-# for key, value in processed_input.items():
-# if key == "champion_ids":
-## 2D array handling (special case)
-# repeated = np.repeat(value, batch_size, axis=0)
-# batched_input[key] = repeated
-# elif len(value.shape) == 1:
-## 1D array (special handling to maintain rank)
-# repeated = np.tile(value, batch_size)
-# batched_input[key] = repeated
-# else:
-## Other arrays
-# batched_input[key] = np.repeat(value, batch_size, axis=0)
-#
-## Warmup
-# for _ in range(3):
-# onnx_session.run(None, batched_input)
-#
-## Timing
-# iterations = 10
-# start_time = time.time()
-#
-# for _ in range(iterations):
-# onnx_session.run(None, batched_input)
-#
-# end_time = time.time()
-#
-## Calculate metrics
-# total_time = end_time - start_time
-# per_batch = total_time / iterations
-# per_item = per_batch / batch_size
-# throughput = batch_size / per_batch
-#
-# results[batch_size] = {
-# "total_time_ms": total_time * 1000,
-# "per_batch_ms": per_batch * 1000,
-# "per_item_ms": per_item * 1000,
-# "items_per_second": throughput,
-# }
-#
-## Find optimal batch size (highest throughput)
-# optimal_size = max(results.items(), key=lambda x: x[1]["items_per_second"])[0]
-#
-## Update global batch size settings
-# global MAX_BATCH_SIZE
-# global BATCH_WAIT_TIME
-#
-## Set new values
-# MAX_BATCH_SIZE = optimal_size
-# BATCH_WAIT_TIME = min(
-# 0.1, results[optimal_size]["per_batch_ms"] / 2000
-# )  # Half the batch time in seconds
-#
-# return {
-# "results": results,
-# "optimal_batch_size": optimal_size,
-# "recommended_settings": {
-# "MAX_BATCH_SIZE": optimal_size,
-# "BATCH_WAIT_TIME": BATCH_WAIT_TIME,
-# },
-# "settings_updated": True,
-# }
 
 
 # For running with uvicorn
