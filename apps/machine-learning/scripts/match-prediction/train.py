@@ -21,15 +21,13 @@ from utils.match_prediction.match_dataset import MatchDataset, dataloader_config
 from utils.match_prediction.model import Model
 from utils.match_prediction import (
     get_best_device,
-    ENCODERS_PATH,
     MODEL_PATH,
     MODEL_CONFIG_PATH,
     TRAIN_BATCH_SIZE,
     PATCH_MAPPING_PATH,
-    NUMERICAL_STATS_PATH,
 )
 from utils.match_prediction.column_definitions import (
-    CATEGORICAL_COLUMNS,
+    KNOWN_CATEGORICAL_COLUMNS_NAMES,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType, get_enabled_tasks
 from utils.match_prediction.config import TrainingConfig
@@ -263,24 +261,9 @@ def validate(
         with open(PATCH_MAPPING_PATH, "rb") as f:
             patch_data = pickle.load(f)
             reverse_patch_mapping = {v: k for k, v in patch_data["mapping"].items()}
-        with open(NUMERICAL_STATS_PATH, "rb") as f:
-            numerical_stats = pickle.load(f)
-            patch_mean = numerical_stats["means"]["numerical_patch"]
-            patch_std = numerical_stats["stds"]["numerical_patch"]
     except (FileNotFoundError, KeyError) as e:
         print(f"Warning: Could not load patch mapping or stats: {e}")
         reverse_patch_mapping = None
-        patch_mean = None
-        patch_std = None
-
-    # Load queue encoder for inverse transformation
-    try:
-        with open(ENCODERS_PATH, "rb") as f:
-            encoders = pickle.load(f)
-            queue_inverse_transform = encoders["queueId"].inverse_transform
-    except (FileNotFoundError, KeyError) as e:
-        print(f"Warning: Could not load queue encoders: {e}")
-        queue_inverse_transform = lambda x: x  # Fallback to encoded values
 
     # Subset accumulators for win prediction (on GPU)
     if config.track_subset_val_losses and "win_prediction" in enabled_tasks:
@@ -317,10 +300,6 @@ def validate(
                             loss = nn.functional.mse_loss(
                                 outputs[task_name], labels[task_name], reduction="none"
                             )
-                        elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
-                            loss = nn.functional.cross_entropy(
-                                outputs[task_name], labels[task_name], reduction="none"
-                            )
                         task_losses[task_name] = loss
 
                     # Update loss accumulators
@@ -351,9 +330,9 @@ def validate(
                     ):
                         win_pred_losses = task_losses["win_prediction"]
                         for key, values in [
-                            ("patch", features["numerical_patch"]),
-                            ("elo", features["numerical_elo"].int()),
-                            ("queue", features["queueId"]),
+                            ("patch", features["patch"]),
+                            ("elo", features["elo"]),
+                            ("queue", features["queue_type"]),
                         ]:
                             unique_vals, inverse = torch.unique(
                                 values, return_inverse=True
@@ -386,23 +365,9 @@ def validate(
     if config.track_subset_val_losses and "win_prediction" in enabled_tasks:
         # Patch metrics
         for patch_val, (loss_sum, count) in patch_losses.items():
-            if (
-                reverse_patch_mapping
-                and patch_mean is not None
-                and patch_std is not None
-            ):
-                denormalized_patch = (patch_val * patch_std) + patch_mean
-                denormalized_patch = round(denormalized_patch)
-                original_patch = reverse_patch_mapping.get(denormalized_patch)
-                if original_patch is not None:
-                    major = int(original_patch) // 50
-                    minor = int(original_patch) % 50
-                    patch_key = f"{major}.{minor:02d}"
-                else:
-                    patch_key = f"unknown_{patch_val:.2f}"
-            else:
-                patch_key = f"{patch_val:.2f}"
-            losses[f"win_prediction_patch_{patch_key}"] = loss_sum / count
+            if reverse_patch_mapping:
+                original_patch = reverse_patch_mapping.get(patch_val)
+                losses[f"win_prediction_patch_{original_patch}"] = loss_sum / count
 
         # ELO metrics
         for elo_val, (loss_sum, count) in elo_losses.items():
@@ -410,8 +375,7 @@ def validate(
 
         # Queue metrics
         for queue_val, (loss_sum, count) in queue_losses.items():
-            original_queue_id = queue_inverse_transform([queue_val])[0]
-            losses[f"win_prediction_queue_{original_queue_id}"] = loss_sum / count
+            losses[f"win_prediction_queue_{queue_val}"] = loss_sum / count
 
     return avg_loss, losses
 
@@ -502,8 +466,6 @@ def train_model(
                 criterions[task_name] = nn.BCEWithLogitsLoss()
             elif task_def.task_type == TaskType.REGRESSION:
                 criterions[task_name] = nn.MSELoss()
-            elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
-                criterions[task_name] = nn.CrossEntropyLoss()
 
     optimizer = optim.AdamW(
         get_optimizer_grouped_parameters(model, config.weight_decay),

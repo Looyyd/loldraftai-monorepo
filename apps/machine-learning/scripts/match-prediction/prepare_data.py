@@ -11,14 +11,14 @@ from sklearn.model_selection import train_test_split
 from utils.match_prediction import (
     RAW_AZURE_DIR,
     PREPARED_DATA_DIR,
-    CHAMPION_ID_MAPPING_PATH,
+    CHAMPION_ID_ENCODER_PATH,
     TASK_STATS_PATH,
     PATCH_MAPPING_PATH,
     SAMPLE_COUNTS_PATH,
 )
 from utils.match_prediction.column_definitions import (
     COLUMNS,
-    KNOWN_CATEGORICAL_COLUMNS,
+    KNOWN_CATEGORICAL_COLUMNS_NAMES,
     get_patch_from_raw_data,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType
@@ -38,7 +38,7 @@ MIN_CS_15MIN_NORMAL = 25  # Minimum CS at 15 minutes for non-support roles
 MIN_LEVEL_15MIN = 4  # Minimum level at 15 minutes
 
 
-def create_champion_id_mapping(data_files):
+def create_champion_id_encoder(data_files: List[str]) -> LabelEncoder:
     print(f"Creating encoder for champion_ids")
     unique_values = set()
     for file_path in tqdm(data_files, desc="Processing champion_ids"):
@@ -120,7 +120,7 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
 
     # Create mapping, handling low-data patches
     patch_mapping = {}
-    normalized_value = 1
+    patch_index = 0
     previous_significant_patch = None
 
     # Process patches from oldest to newest of the recent patches
@@ -129,9 +129,9 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
             patch_counts[patch] > PATCH_MIN_GAMES or DEBUG
         ):  # In debug mode, accept all patches
             # This is a significant patch
-            patch_mapping[patch] = normalized_value
+            patch_mapping[patch] = patch_index
             previous_significant_patch = patch
-            normalized_value += 1
+            patch_index += 1
         elif previous_significant_patch is not None:
             # Map to previous significant patch
             patch_mapping[patch] = patch_mapping[previous_significant_patch]
@@ -139,9 +139,9 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
             # First patch has low data
             if DEBUG:
                 # In debug mode, accept it anyway
-                patch_mapping[patch] = normalized_value
+                patch_mapping[patch] = patch_index
                 previous_significant_patch = patch
-                normalized_value += 1
+                patch_index += 1
             else:
                 raise ValueError(f"First patch {patch} has insufficient data!")
 
@@ -246,7 +246,7 @@ def filter_outliers(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
 def prepare_data(
     input_files,
     output_dir,
-    champion_mapping,
+    champion_encoder: LabelEncoder,
     task_means,
     task_stds,
     target_file_size: int = 50000,  # Target number of rows per output file
@@ -289,7 +289,7 @@ def prepare_data(
         # Create empty DataFrame with all columns pre-allocated with correct types
         column_dtypes = {
             # Categorical columns are integers
-            **{col: "int32" for col in KNOWN_CATEGORICAL_COLUMNS},
+            **{col: "int32" for col in KNOWN_CATEGORICAL_COLUMNS_NAMES},
             # Special columns
             "patch": "int32",
             "champion_ids": "object",  # array of ints needs object dtype
@@ -312,7 +312,7 @@ def prepare_data(
             continue
 
         # Can just copy, it was already processed(because categories are known)
-        new_df[KNOWN_CATEGORICAL_COLUMNS] = old_df[KNOWN_CATEGORICAL_COLUMNS].astype(
+        new_df[KNOWN_CATEGORICAL_COLUMNS_NAMES] = old_df[KNOWN_CATEGORICAL_COLUMNS_NAMES].astype(
             "int32"
         )
         # Special handling columns(patch and champion ids)
@@ -320,7 +320,7 @@ def prepare_data(
         new_df["patch"] = old_df["patch"].astype("int32")
         # Champion mapping was just created, need to apply it
         new_df["champion_ids"] = old_df["champion_ids"].apply(
-            lambda x: champion_mapping.transform(x)
+            lambda x: champion_encoder.transform(x)
         )
         # Process all numerical tasks at once
         regression_tasks = [
@@ -542,14 +542,14 @@ def main():
     enhanced_files = add_computed_columns(input_files, temp_dir)
 
     print("Creating encoders...")
-    champion_mapping = create_champion_id_mapping(enhanced_files)
+    champion_encoder = create_champion_id_encoder(enhanced_files)
 
     print("Computing statistics...")
     task_means, task_stds = compute_task_stats(enhanced_files)
 
     print("Saving encoders and statistics...")
-    with open(CHAMPION_ID_MAPPING_PATH, "wb") as f:
-        pickle.dump(champion_mapping, f)
+    with open(CHAMPION_ID_ENCODER_PATH, "wb") as f:
+        pickle.dump({"mapping": champion_encoder}, f)
     with open(TASK_STATS_PATH, "wb") as f:
         pickle.dump({"means": task_means, "stds": task_stds}, f)
 
@@ -557,7 +557,7 @@ def main():
     prepare_data(
         enhanced_files,
         args.output_dir,
-        champion_mapping,
+        champion_encoder,
         task_means,
         task_stds,
     )

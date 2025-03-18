@@ -1,9 +1,30 @@
 from enum import Enum
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, List
+from functools import wraps
 import pandas as pd
 
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+
+
+def validate_categorical_output(possible_values: List[int]) -> Callable:
+    """Decorator to validate that categorical getters only return allowed values."""
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> pd.Series:
+            result = func(*args, **kwargs)
+            invalid_values = set(result.unique()) - set(possible_values)
+            if invalid_values:
+                raise ValueError(
+                    f"Getter returned invalid values {invalid_values}. "
+                    f"Allowed values are {possible_values}"
+                )
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 class ColumnType(Enum):
@@ -18,8 +39,27 @@ class ColumnDefinition:
     name: str
     column_type: ColumnType
     getter: Optional[Callable[[pd.DataFrame], pd.Series]] = None
+    possible_values: Optional[List[int]] = None
+
+    def __post_init__(self):
+        if (
+            self.column_type == ColumnType.KNOWN_CATEGORICAL
+            and self.possible_values is None
+        ):
+            raise ValueError(
+                f"Column {self.name} is categorical but has no possible_values defined"
+            )
 
 
+possible_values_elo = [
+    0,
+    1,
+    2,
+    3,
+]
+
+
+@validate_categorical_output(possible_values_elo)
 def get_categorical_elo(df: pd.DataFrame) -> pd.Series:
     """Convert tier/division to numerical value."""
 
@@ -47,6 +87,10 @@ def get_categorical_elo(df: pd.DataFrame) -> pd.Series:
     return df.apply(map_elo, axis=1)
 
 
+possible_values_queue_type = [0, 1]
+
+
+@validate_categorical_output(possible_values_queue_type)
 def get_categorical_queue_type(df: pd.DataFrame) -> pd.Series:
     """Convert queueId to categorical value.
     420: Ranked Solo/Duo -> 0
@@ -60,10 +104,6 @@ def get_categorical_queue_type(df: pd.DataFrame) -> pd.Series:
 
     queue_mapping = {420: 0, 700: 1}
     return df["queueId"].map(queue_mapping)
-
-
-# TODO: will need something to know all the possible values for categorical elo!
-# TODO: will need something to know all the possible values for categorical queue type!
 
 
 def get_patch_from_raw_data(df: pd.DataFrame) -> pd.Series:
@@ -92,30 +132,30 @@ COLUMNS: Dict[str, ColumnDefinition] = {
         name="elo",
         column_type=ColumnType.KNOWN_CATEGORICAL,
         getter=get_categorical_elo,
+        possible_values=possible_values_elo,
     ),
     "queue_type": ColumnDefinition(
         name="queue_type",
         column_type=ColumnType.KNOWN_CATEGORICAL,
         getter=get_categorical_queue_type,
+        possible_values=possible_values_queue_type,
     ),
     # special case for patch number, applied in prepare-data.py
     "patch": ColumnDefinition(
         name="patch",
         column_type=ColumnType.SPECIAL,
-        # getter=get_numerical_patch,
     ),
-    # TODO: Could change to categorical for simplification
     "champion_ids": ColumnDefinition(
         name="champion_ids", column_type=ColumnType.SPECIAL, getter=get_champion_ids
     ),
 }
 
 # Helper lists for different column types
-KNOWN_CATEGORICAL_COLUMNS = [
+KNOWN_CATEGORICAL_COLUMNS_NAMES = [
     col
     for col, def_ in COLUMNS.items()
     if def_.column_type == ColumnType.KNOWN_CATEGORICAL
 ]
-SPECIAL_COLUMNS = [
+SPECIAL_COLUMNS_NAMES = [
     col for col, def_ in COLUMNS.items() if def_.column_type == ColumnType.SPECIAL
 ]

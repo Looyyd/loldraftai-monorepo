@@ -42,7 +42,6 @@ INDIVIDUAL_STATS = [
 class TaskType(Enum):
     BINARY_CLASSIFICATION = "binary_classification"
     REGRESSION = "regression"
-    MULTICLASS_CLASSIFICATION = "multiclass_classification"
 
 
 class TaskDefinition:

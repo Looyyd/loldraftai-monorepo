@@ -59,7 +59,6 @@ dataloader_config = get_dataloader_config()
 class MatchDataset(IterableDataset):
     def __init__(
         self,
-        transform=None,
         masking_function: Optional[Callable[[], int]] = None,
         unknown_champion_id=None,
         train_or_test="train",
@@ -72,7 +71,6 @@ class MatchDataset(IterableDataset):
                 )
             )
         )
-        self.transform = transform
         self.dataset_fraction = dataset_fraction
         self.train_or_test = train_or_test
 
@@ -149,39 +147,18 @@ class MatchDataset(IterableDataset):
                         yield sample
 
     def _get_samples(self, df_chunk):
-        for col, col_def in COLUMNS.items():
-            if col_def.column_type == ColumnType.CATEGORICAL:
-                df_chunk[col] = df_chunk[col].astype(int)
-            elif col_def.column_type == ColumnType.NUMERICAL:
-                df_chunk[col] = df_chunk[col].astype(float)
-            elif col_def.column_type == ColumnType.LIST and col == "champion_ids":
-                df_chunk[col] = df_chunk[col].apply(
-                    lambda x: [int(ch_id) for ch_id in x]
-                )
-                if (
-                    self.masking_function is not None
-                    and self.unknown_champion_id is not None
-                ):
-                    # TODO: maybe could batch this?
-                    df_chunk[col] = df_chunk[col].apply(
-                        lambda x: self._mask_champions(x, self.masking_function())
-                    )
-                # Add champion role percentages
-                df_chunk[col] = df_chunk[col].apply(
-                    lambda x: torch.tensor(x, dtype=torch.long)
-                )
+        # Only handle champion masking if needed
+        if self.masking_function is not None and self.unknown_champion_id is not None:
+            df_chunk["champion_ids"] = df_chunk["champion_ids"].apply(
+                lambda x: self._mask_champions(x, self.masking_function())
+            )
 
-        for task_name, task_def in TASKS.items():
-            if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
-                df_chunk[task_name] = df_chunk[task_name].astype(float)
-            elif task_def.task_type == TaskType.MULTICLASS_CLASSIFICATION:
-                df_chunk[task_name] = df_chunk[task_name].astype(int)
-            # No need to normalize regression tasks as they are already normalized
+        # Convert champion_ids to tensor(expected by collate_fn)
+        df_chunk["champion_ids"] = df_chunk["champion_ids"].apply(
+            lambda x: torch.tensor(x, dtype=torch.long)
+        )
 
         samples = df_chunk.to_dict("records")
-        if self.transform:
-            samples = [self.transform(sample) for sample in samples]
-
         return samples
 
     def _mask_champions(self, champion_list: List[int], num_to_mask: int) -> List[int]:
