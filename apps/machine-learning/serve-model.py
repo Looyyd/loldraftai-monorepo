@@ -17,10 +17,8 @@ from utils.match_prediction.column_definitions import COLUMNS, ColumnType
 from utils.match_prediction import (
     CHAMPION_ID_ENCODER_PATH,
     TASK_STATS_PATH,
-    MODEL_CONFIG_PATH,
     ONNX_MODEL_PATH,
     POSITIONS,
-    PREPARED_DATA_DIR,
     PATCH_MAPPING_PATH,
 )
 

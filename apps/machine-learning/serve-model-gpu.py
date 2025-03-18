@@ -10,39 +10,27 @@ import os
 from pathlib import Path
 import numpy as np
 
+from utils.match_prediction import get_best_device
 from utils.match_prediction.model import Model
 from utils.match_prediction import (
-    ENCODERS_PATH,
-    NUMERICAL_STATS_PATH,
     MODEL_PATH,
     MODEL_CONFIG_PATH,
     PATCH_MAPPING_PATH,
+    CHAMPION_ID_ENCODER_PATH,
 )
 
-# Set up GPU acceleration (CUDA or MPS)
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    print("Using CUDA GPU acceleration")
-elif torch.backends.mps.is_available():
-    device = torch.device("mps")
-    print("Using MPS (Metal Performance Shaders) for Apple Silicon GPU acceleration")
-else:
-    device = torch.device("cpu")
-    print("No GPU acceleration available, falling back to CPU")
+device = get_best_device()
 
 # Initialize FastAPI with minimal configuration
-app = FastAPI(title="LoL Draft Model Server - M1 Optimized")
+app = FastAPI(title="LoL Draft Model Server - GPU Optimized")
 
 # Load resources
 print("Loading resources...")
 
 # Load label encoders
-with open(ENCODERS_PATH, "rb") as f:
-    label_encoders = pickle.load(f)
+with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
+    champion_id_encoder = pickle.load(f)["mapping"]
 
-# Load numerical stats for normalization
-with open(NUMERICAL_STATS_PATH, "rb") as f:
-    numerical_stats = pickle.load(f)
 
 # Get patch mapping
 with open(PATCH_MAPPING_PATH, "rb") as f:
@@ -55,8 +43,6 @@ with open(MODEL_CONFIG_PATH, "rb") as f:
 
 # Create model with same architecture
 model = Model(
-    num_categories=model_config["num_categories"],
-    num_champions=model_config["num_champions"],
     embed_dim=model_config["embed_dim"],
     hidden_dims=model_config["hidden_dims"],
     dropout=0.0,  # No dropout needed for inference
@@ -76,7 +62,7 @@ print("Model loaded successfully")
 
 # Enable mixed precision when possible (faster on GPUs)
 use_mixed_precision = False
-if device.type in ["cuda", "mps"]:
+if device.type in ["cuda"]:
     print(f"Enabling mixed precision for faster inference on {device.type}")
     use_mixed_precision = True
 
@@ -95,15 +81,37 @@ def verify_api_key(api_key: Optional[str] = Depends(API_KEY_HEADER)):
 class APIInput(BaseModel):
     champion_ids: List[int | Literal["UNKNOWN"]]
     numerical_elo: int
-    patch: Optional[str] = None
-    queueId: int
+    patch: str | None = None
+    queue_type: int = 0
+    _mapped_patch: int | None = None
+
+    @property
+    def mapped_patch(self) -> int:
+        """Convert patch string (e.g., '14.22') to numerical format"""
+        if self._mapped_patch is not None:
+            return self._mapped_patch
+
+        latest_patch = sorted(patch_mapping.keys())[-1]
+        latest_mapped_patch = patch_mapping[latest_patch]
+        if not self.patch:
+            # Find the latest patch from patch_mapping
+            return latest_mapped_patch
+
+        # Store the mapped patch value
+        self._mapped_patch = patch_mapping.get(self.patch, latest_mapped_patch)
+        return self._mapped_patch
+
+    # TODO: could be removed(but also in frontend), artifact of old model architecture
+    @property
+    def elo(self) -> int:
+        return self.numerical_elo
 
 
 class WinratePrediction(BaseModel):
     win_probability: float
 
 
-def preprocess_batch(batch_inputs):
+def preprocess_batch(batch_inputs: List[APIInput]):
     """
     Efficiently preprocess a batch of inputs for the model
     """
@@ -118,7 +126,7 @@ def preprocess_batch(batch_inputs):
     encoded_champions = []
     for champion_ids in all_champion_ids:
         # Transform directly with label encoder handling "UNKNOWN"
-        encoded = label_encoders["champion_ids"].transform(champion_ids)
+        encoded = champion_id_encoder.transform(champion_ids)
         encoded_champions.append(encoded)
 
     # Convert list to numpy array first, then to tensor
@@ -127,58 +135,25 @@ def preprocess_batch(batch_inputs):
         encoded_champions, dtype=torch.long, device=device
     )
 
-    # Process numerical ELO
-    elo_mean = numerical_stats["means"].get("numerical_elo", 0.0)
-    elo_std = numerical_stats["stds"].get("numerical_elo", 1.0)
+    elos = [input_data.elo for input_data in batch_inputs]
 
-    elos = []
-    for input_data in batch_inputs:
-        if elo_std == 0:
-            normalized_elo = 0.0
-        else:
-            normalized_elo = (input_data.numerical_elo - elo_mean) / elo_std
-        elos.append(normalized_elo)
+    elo_tensor = torch.tensor(elos, dtype=torch.long, device=device)
 
-    elo_tensor = torch.tensor(elos, dtype=torch.float32, device=device)
+    patches = [input_data.mapped_patch for input_data in batch_inputs]
 
-    # Process patch
-    patch_mean = numerical_stats["means"].get("numerical_patch", 0.0)
-    patch_std = numerical_stats["stds"].get("numerical_patch", 1.0)
-
-    patches = []
-    for input_data in batch_inputs:
-        if not input_data.patch:
-            # Use the latest patch if none provided
-            latest_patch = max(patch_mapping.keys())
-            numerical_patch = int(latest_patch)
-        else:
-            major, minor = input_data.patch.split(".")
-            raw_patch = int(major) * 50 + int(minor)
-            numerical_patch = patch_mapping.get(float(raw_patch), 0)
-
-        if patch_std == 0:
-            normalized_patch = 0.0
-        else:
-            normalized_patch = (numerical_patch - patch_mean) / patch_std
-        patches.append(normalized_patch)
-
-    patch_tensor = torch.tensor(patches, dtype=torch.float32, device=device)
+    patch_tensor = torch.tensor(patches, dtype=torch.long, device=device)
 
     # Process queueId
-    queues = []
-    for input_data in batch_inputs:
-        # Transform queueId using label encoder
-        encoded_queue = label_encoders["queueId"].transform([input_data.queueId])[0]
-        queues.append(encoded_queue)
+    queues = [input_data.queue_type for input_data in batch_inputs]
 
     queue_tensor = torch.tensor(queues, dtype=torch.long, device=device)
 
     # Return as dictionary for model input
     return {
         "champion_ids": champion_ids_tensor,
-        "numerical_elo": elo_tensor,
-        "numerical_patch": patch_tensor,
-        "queueId": queue_tensor,
+        "elo": elo_tensor,
+        "patch": patch_tensor,
+        "queue_type": queue_tensor,
     }
 
 
