@@ -11,16 +11,15 @@ from sklearn.model_selection import train_test_split
 from utils.match_prediction import (
     RAW_AZURE_DIR,
     PREPARED_DATA_DIR,
-    ENCODERS_PATH,
-    NUMERICAL_STATS_PATH,
+    CHAMPION_ID_MAPPING_PATH,
     TASK_STATS_PATH,
     PATCH_MAPPING_PATH,
     SAMPLE_COUNTS_PATH,
 )
 from utils.match_prediction.column_definitions import (
-    NUMERICAL_COLUMNS,
-    CATEGORICAL_COLUMNS,
     COLUMNS,
+    KNOWN_CATEGORICAL_COLUMNS,
+    get_patch_from_raw_data,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType
 from typing import List, Dict, Tuple
@@ -39,33 +38,23 @@ MIN_CS_15MIN_NORMAL = 25  # Minimum CS at 15 minutes for non-support roles
 MIN_LEVEL_15MIN = 4  # Minimum level at 15 minutes
 
 
-def create_encoders(data_files):
-    encoders = {}
-    for col in CATEGORICAL_COLUMNS + ["champion_ids"]:
-        # TODO: only created encoders for non id columns? why would we need it for queueId?
-        print(f"Creating encoder for {col}")
-        unique_values = set()
-        for file_path in tqdm(data_files, desc=f"Processing {col}"):
-            df = pd.read_parquet(file_path)
-            if col == "champion_ids":
-                unique_values.update(df[col].explode().unique())
-            else:
-                unique_values.update(df[col].unique())
+def create_champion_id_mapping(data_files):
+    print(f"Creating encoder for champion_ids")
+    unique_values = set()
+    for file_path in tqdm(data_files, desc="Processing champion_ids"):
+        df = pd.read_parquet(file_path)
+        unique_values.update(df["champion_ids"].explode().unique())
 
-        unique_values = sorted(unique_values)
-        # TODO: this should only be for unseen categories
-        unique_values.append("UNKNOWN")  # Add UNKNOWN for unseen categories
+    unique_values = sorted(unique_values)
+    unique_values.append("UNKNOWN")
 
-        encoder = LabelEncoder()
-        encoder.fit(unique_values)
-        encoders[col] = encoder
+    encoder = LabelEncoder()
+    encoder.fit(unique_values)
 
-    return encoders
+    return encoder
 
 
-def compute_stats(data_files):
-    numerical_sums = {col: 0.0 for col in NUMERICAL_COLUMNS}
-    numerical_sumsq = {col: 0.0 for col in NUMERICAL_COLUMNS}
+def compute_task_stats(data_files):
     task_sums = {
         task: 0.0
         for task, task_def in TASKS.items()
@@ -80,29 +69,20 @@ def compute_stats(data_files):
 
     for file_path in tqdm(data_files, desc="Computing stats"):
         df = pd.read_parquet(file_path)
-        for col in NUMERICAL_COLUMNS:
-            numerical_sums[col] += df[col].sum()
-            numerical_sumsq[col] += (df[col] ** 2).sum()
+
         for task, task_def in TASKS.items():
             if task_def.task_type == TaskType.REGRESSION:
                 task_sums[task] += df[task].sum()
                 task_sumsq[task] += (df[task] ** 2).sum()
         total_count += len(df)
 
-    numerical_means = {
-        col: numerical_sums[col] / total_count for col in NUMERICAL_COLUMNS
-    }
-    numerical_stds = {
-        col: np.sqrt((numerical_sumsq[col] / total_count) - (numerical_means[col] ** 2))
-        for col in NUMERICAL_COLUMNS
-    }
     task_means = {task: task_sums[task] / total_count for task in task_sums}
     task_stds = {
         task: np.sqrt((task_sumsq[task] / total_count) - (task_means[task] ** 2))
         for task in task_sums
     }
 
-    return numerical_means, numerical_stds, task_means, task_stds
+    return task_means, task_stds
 
 
 def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
@@ -116,11 +96,12 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
     print("Computing patch distribution...")
     for file_path in tqdm(input_files):
         df = pd.read_parquet(file_path)
-        raw_patches = df["gameVersionMajorPatch"] * 50 + df["gameVersionMinorPatch"]
+        raw_patches = get_patch_from_raw_data(df)
         for patch in raw_patches:
             patch_counts[patch] += 1
-
-    all_patches = sorted(patch_counts.keys())  # All patches in chronological order
+    # All patches in chronological order, works because patches are 0 padded
+    # "14.01" < "14.02" < "14.10" in lexicographical order.
+    all_patches = sorted(patch_counts.keys())
 
     # Get the last NUM_RECENT_PATCHES patches
     recent_patches = all_patches[-NUM_RECENT_PATCHES:]
@@ -168,7 +149,7 @@ def compute_patch_mapping(input_files: List[str]) -> Dict[float, int]:
     print("\nPatch mapping (last NUM_RECENT_PATCHES patches):")
     for patch in sorted(patch_mapping.keys()):
         mapped_value = patch_mapping[patch]
-        print(f"Patch {patch:.2f} -> {mapped_value} ({patch_counts[patch]} games)")
+        print(f"Patch {patch} -> {mapped_value} ({patch_counts[patch]} games)")
 
     return patch_mapping, patch_counts
 
@@ -265,9 +246,7 @@ def filter_outliers(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
 def prepare_data(
     input_files,
     output_dir,
-    encoders,
-    numerical_means,
-    numerical_stds,
+    champion_mapping,
     task_means,
     task_stds,
     target_file_size: int = 50000,  # Target number of rows per output file
@@ -305,36 +284,66 @@ def prepare_data(
     rng.shuffle(input_files)
 
     for file_index, file_path in enumerate(tqdm(input_files, desc="Preparing data")):
-        df = pd.read_parquet(file_path)
+        old_df = pd.read_parquet(file_path)
 
-        if len(df) <= 1:
-            print(f"Skipping file {file_path} - insufficient samples ({len(df)} rows)")
+        # Create empty DataFrame with all columns pre-allocated with correct types
+        column_dtypes = {
+            # Categorical columns are integers
+            **{col: "int32" for col in KNOWN_CATEGORICAL_COLUMNS},
+            # Special columns
+            "patch": "int32",
+            "champion_ids": "object",  # array of ints needs object dtype
+            # All tasks are floats
+            **{task: "float32" for task in TASKS.keys()},
+        }
+
+        new_df = pd.DataFrame(
+            # Initialize with NaN for float columns, 0 for int columns
+            {
+                col: np.zeros(len(old_df), dtype=dtype)
+                for col, dtype in column_dtypes.items()
+            }
+        )
+
+        if len(old_df) <= 1:
+            print(
+                f"Skipping file {file_path} - insufficient samples ({len(old_df)} rows)"
+            )
             continue
 
-        # Process the data as before
-        for col in CATEGORICAL_COLUMNS:
-            df[col] = encoders[col].transform(df[col])
-        df["champion_ids"] = df["champion_ids"].apply(
-            lambda x: encoders["champion_ids"].transform(x)
+        # Can just copy, it was already processed(because categories are known)
+        new_df[KNOWN_CATEGORICAL_COLUMNS] = old_df[KNOWN_CATEGORICAL_COLUMNS].astype(
+            "int32"
         )
-        for col in NUMERICAL_COLUMNS:
-            if numerical_stds[col] != 0:
-                df[col] = (df[col] - numerical_means[col]) / numerical_stds[col]
+        # Special handling columns(patch and champion ids)
+        # Patch was already mapped, just copy
+        new_df["patch"] = old_df["patch"].astype("int32")
+        # Champion mapping was just created, need to apply it
+        new_df["champion_ids"] = old_df["champion_ids"].apply(
+            lambda x: champion_mapping.transform(x)
+        )
+        # Process all numerical tasks at once
+        regression_tasks = [
+            task
+            for task, task_def in TASKS.items()
+            if task_def.task_type == TaskType.REGRESSION
+        ]
+
+        # Vectorized operation for all regression tasks
+        for task in regression_tasks:
+            if task_stds[task] != 0:
+                new_df[task] = (
+                    (old_df[task] - task_means[task]) / task_stds[task]
+                ).astype("float32")
             else:
-                df[col] = df[col] - numerical_means[col]
-        for task, task_def in TASKS.items():
-            if task_def.task_type == TaskType.REGRESSION:
-                if task_stds[task] != 0:
-                    df[task] = (df[task] - task_means[task]) / task_stds[task]
-                else:
-                    df[task] = df[task] - task_means[task]
+                new_df[task] = (old_df[task] - task_means[task]).astype("float32")
 
         # Split into train/test
-        if len(df) < 10:
-            df_train = df.iloc[:-1]
-            df_test = df.iloc[-1:]
+        if len(new_df) < 10:
+            df_train = new_df.iloc[:-1]
+            df_test = new_df.iloc[-1:]
         else:
-            df_train, df_test = train_test_split(df, test_size=0.1, random_state=42)
+            df_train, df_test = train_test_split(new_df, test_size=0.1, random_state=42)
 
         # Add to buffers
         train_buffer.extend(df_train.to_dict("records"))
@@ -353,7 +362,7 @@ def prepare_data(
             test_buffer = []
 
         # Clear memory
-        del df, df_train, df_test
+        del old_df, new_df, df_train, df_test
 
     # Write remaining buffers
     if train_buffer:
@@ -412,11 +421,11 @@ def add_computed_columns(input_files: List[str], output_dir: str) -> List[str]:
         cumulative_stats["total_raw"] += original_count
 
         # Calculate raw patch numbers
-        raw_patches = df["gameVersionMajorPatch"] * 50 + df["gameVersionMinorPatch"]
+        raw_patches = get_patch_from_raw_data(df)
 
         # Filter for games only in the patch mapping (last NUM_RECENT_PATCHES patches)
-        df["numerical_patch"] = raw_patches.map(lambda x: patch_mapping.get(x, 0))
-        df = df[df["numerical_patch"] > 0]  # Remove games from old patches
+        df["patch"] = raw_patches.map(lambda x: patch_mapping.get(x, 0))
+        df = df[df["patch"] > 0]  # Remove games from old patches
 
         # Track how many games were filtered due to patches
         cumulative_stats["patch_filtered"] += original_count - len(df)
@@ -533,18 +542,14 @@ def main():
     enhanced_files = add_computed_columns(input_files, temp_dir)
 
     print("Creating encoders...")
-    encoders = create_encoders(enhanced_files)
+    champion_mapping = create_champion_id_mapping(enhanced_files)
 
     print("Computing statistics...")
-    numerical_means, numerical_stds, task_means, task_stds = compute_stats(
-        enhanced_files
-    )
+    task_means, task_stds = compute_task_stats(enhanced_files)
 
     print("Saving encoders and statistics...")
-    with open(ENCODERS_PATH, "wb") as f:
-        pickle.dump(encoders, f)
-    with open(NUMERICAL_STATS_PATH, "wb") as f:
-        pickle.dump({"means": numerical_means, "stds": numerical_stds}, f)
+    with open(CHAMPION_ID_MAPPING_PATH, "wb") as f:
+        pickle.dump(champion_mapping, f)
     with open(TASK_STATS_PATH, "wb") as f:
         pickle.dump({"means": task_means, "stds": task_stds}, f)
 
@@ -552,9 +557,7 @@ def main():
     prepare_data(
         enhanced_files,
         args.output_dir,
-        encoders,
-        numerical_means,
-        numerical_stds,
+        champion_mapping,
         task_means,
         task_stds,
     )

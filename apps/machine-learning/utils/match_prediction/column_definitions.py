@@ -7,9 +7,10 @@ POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 
 
 class ColumnType(Enum):
-    CATEGORICAL = "categorical"
-    NUMERICAL = "numerical"
-    LIST = "list"
+    # Known categorical, where we know what the values map to
+    KNOWN_CATEGORICAL = "known_categorical"
+    # special columns, that have unique handling eg:champion ids
+    SPECIAL = "special"
 
 
 @dataclass
@@ -19,7 +20,7 @@ class ColumnDefinition:
     getter: Optional[Callable[[pd.DataFrame], pd.Series]] = None
 
 
-def get_numerical_elo(df: pd.DataFrame) -> pd.Series:
+def get_categorical_elo(df: pd.DataFrame) -> pd.Series:
     """Convert tier/division to numerical value."""
 
     def map_elo(row):
@@ -46,9 +47,32 @@ def get_numerical_elo(df: pd.DataFrame) -> pd.Series:
     return df.apply(map_elo, axis=1)
 
 
-def get_numerical_patch(df: pd.DataFrame) -> pd.Series:
-    """Convert patch version to numerical value."""
-    return df["gameVersionMajorPatch"] * 50 + df["gameVersionMinorPatch"]
+def get_categorical_queue_type(df: pd.DataFrame) -> pd.Series:
+    """Convert queueId to categorical value.
+    420: Ranked Solo/Duo -> 0
+    700: Clash -> 1
+    """
+    # Verify the queueId is one of the expected values
+    valid_queues = {420, 700}
+    invalid_queues = set(df["queueId"].unique()) - valid_queues
+    if invalid_queues:
+        raise ValueError(f"Unexpected queueId values found: {invalid_queues}")
+
+    queue_mapping = {420: 0, 700: 1}
+    return df["queueId"].map(queue_mapping)
+
+
+# TODO: will need something to know all the possible values for categorical elo!
+# TODO: will need something to know all the possible values for categorical queue type!
+
+
+def get_patch_from_raw_data(df: pd.DataFrame) -> pd.Series:
+    """Convert patch version to string format 'major.minor' with zero-padded minor version."""
+    return (
+        df["gameVersionMajorPatch"].astype(str)
+        + "."
+        + df["gameVersionMinorPatch"].astype(str).str.zfill(2)
+    )
 
 
 def get_champion_ids(df: pd.DataFrame) -> pd.Series:
@@ -61,49 +85,37 @@ def get_champion_ids(df: pd.DataFrame) -> pd.Series:
     return pd.concat(champion_ids, axis=1).apply(lambda x: x.tolist(), axis=1)
 
 
-def get_queue_type(df: pd.DataFrame) -> pd.Series:
-    """Convert queueId to categorical value.
-    420: Ranked Solo/Duo
-    700: Clash
-    """
-    # Verify the queueId is one of the expected values
-    valid_queues = {420, 700}
-    invalid_queues = set(df["queueId"].unique()) - valid_queues
-    if invalid_queues:
-        raise ValueError(f"Unexpected queueId values found: {invalid_queues}")
-
-    return df["queueId"]
-
-
 # Define all columns
 COLUMNS: Dict[str, ColumnDefinition] = {
     # Computed columns
-    "numerical_elo": ColumnDefinition(
-        name="numerical_elo", column_type=ColumnType.NUMERICAL, getter=get_numerical_elo
+    "elo": ColumnDefinition(
+        name="elo",
+        column_type=ColumnType.KNOWN_CATEGORICAL,
+        getter=get_categorical_elo,
+    ),
+    "queue_type": ColumnDefinition(
+        name="queue_type",
+        column_type=ColumnType.KNOWN_CATEGORICAL,
+        getter=get_categorical_queue_type,
     ),
     # special case for patch number, applied in prepare-data.py
-    "numerical_patch": ColumnDefinition(
-        name="numerical_patch",
-        column_type=ColumnType.NUMERICAL,
+    "patch": ColumnDefinition(
+        name="patch",
+        column_type=ColumnType.SPECIAL,
         # getter=get_numerical_patch,
     ),
     # TODO: Could change to categorical for simplification
     "champion_ids": ColumnDefinition(
-        name="champion_ids", column_type=ColumnType.LIST, getter=get_champion_ids
-    ),
-    # Add the new queueId column with its getter
-    "queueId": ColumnDefinition(
-        name="queueId", column_type=ColumnType.CATEGORICAL, getter=get_queue_type
+        name="champion_ids", column_type=ColumnType.SPECIAL, getter=get_champion_ids
     ),
 }
 
 # Helper lists for different column types
-CATEGORICAL_COLUMNS = [
-    col for col, def_ in COLUMNS.items() if def_.column_type == ColumnType.CATEGORICAL
+KNOWN_CATEGORICAL_COLUMNS = [
+    col
+    for col, def_ in COLUMNS.items()
+    if def_.column_type == ColumnType.KNOWN_CATEGORICAL
 ]
-NUMERICAL_COLUMNS = [
-    col for col, def_ in COLUMNS.items() if def_.column_type == ColumnType.NUMERICAL
-]
-LIST_COLUMNS = [
-    col for col, def_ in COLUMNS.items() if def_.column_type == ColumnType.LIST
+SPECIAL_COLUMNS = [
+    col for col, def_ in COLUMNS.items() if def_.column_type == ColumnType.SPECIAL
 ]

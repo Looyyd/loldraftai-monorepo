@@ -35,15 +35,15 @@ os.makedirs(PREPARED_DATA_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-ENCODERS_PATH = os.path.join(DATA_DIR, "label_encoders.pkl")
+# ENCODERS_PATH = os.path.join(DATA_DIR, "label_encoders.pkl")
 
 MODEL_PATH = os.path.join(MODEL_DIR, "match_outcome_model.pth")
 ONNX_MODEL_PATH = os.path.join(MODEL_DIR, "match_outcome_model.onnx")
 MODEL_CONFIG_PATH = os.path.join(DATA_DIR, "model_config.pkl")
-NUMERICAL_STATS_PATH = os.path.join(DATA_DIR, "numerical_feature_stats.pkl")
 TASK_STATS_PATH = os.path.join(DATA_DIR, "task_stats.pkl")
 CHAMPION_FEATURES_PATH = os.path.join(DATA_DIR, "champion_features.pkl")
 PATCH_MAPPING_PATH = os.path.join(PREPARED_DATA_DIR, "patch_mapping.pkl")
+CHAMPION_ID_MAPPING_PATH = os.path.join(DATA_DIR, "champion_id_mapping.pkl")
 SAMPLE_COUNTS_PATH = os.path.join(PREPARED_DATA_DIR, "sample_counts.pkl")
 
 DEVICE = get_best_device()
