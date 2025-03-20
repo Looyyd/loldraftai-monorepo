@@ -61,7 +61,6 @@ class FineTuningConfig:
         self.initial_frozen_layers = (
             6  # Number of layers to start frozen (2 linear + 2 batchnorm)
         )
-        self.unfreeze_embeddings = False  # Whether to eventually unfreeze embeddings
 
         # Data augmentation options
         self.use_team_symmetry = True  # Enable team symmetry augmentation
@@ -365,15 +364,6 @@ def unfreeze_layer_group(
     total_layer_groups = len(mlp_layers) // 2  # Each group has linear + batchnorm
 
     if current_unfrozen_layers >= total_layer_groups:
-        if config.unfreeze_embeddings:
-            # Unfreeze embeddings last if configured
-            print("Unfreezing embedding layers...")
-            model.patch_embedding.requires_grad_(True)
-            model.champion_patch_embedding.requires_grad_(True)
-            for name, embedding in model.embeddings.items():
-                if name != "queueId":  # Keep queueId unfrozen
-                    embedding.requires_grad_(True)
-            return current_unfrozen_layers + 1
         return current_unfrozen_layers
 
     # Calculate which layer group to unfreeze
