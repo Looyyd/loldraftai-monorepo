@@ -312,9 +312,9 @@ def prepare_data(
             continue
 
         # Can just copy, it was already processed(because categories are known)
-        new_df[KNOWN_CATEGORICAL_COLUMNS_NAMES] = old_df[KNOWN_CATEGORICAL_COLUMNS_NAMES].astype(
-            "int32"
-        )
+        new_df[KNOWN_CATEGORICAL_COLUMNS_NAMES] = old_df[
+            KNOWN_CATEGORICAL_COLUMNS_NAMES
+        ].astype("int32")
         # Special handling columns(patch and champion ids)
         # Patch was already mapped, just copy
         new_df["patch"] = old_df["patch"].astype("int32")
@@ -328,8 +328,6 @@ def prepare_data(
             for task, task_def in TASKS.items()
             if task_def.task_type == TaskType.REGRESSION
         ]
-
-        # Vectorized operation for all regression tasks
         for task in regression_tasks:
             if task_stds[task] != 0:
                 new_df[task] = (
@@ -337,6 +335,19 @@ def prepare_data(
                 ).astype("float32")
             else:
                 new_df[task] = (old_df[task] - task_means[task]).astype("float32")
+
+        # Process binary classification tasks
+        binary_tasks = [
+            task
+            for task, task_def in TASKS.items()
+            if task_def.task_type == TaskType.BINARY_CLASSIFICATION
+        ]
+        for task in binary_tasks:
+            # For win prediction, we need to convert from team_100_win to win_prediction
+            if task == "win_prediction":
+                new_df[task] = old_df["team_100_win"].astype("float32")
+            else:
+                new_df[task] = old_df[task].astype("float32")
 
         # Split into train/test
         if len(new_df) < 10:
