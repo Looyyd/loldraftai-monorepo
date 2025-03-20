@@ -22,13 +22,10 @@ from utils.match_prediction.model import Model
 from utils.match_prediction import (
     get_best_device,
     MODEL_PATH,
-    MODEL_CONFIG_PATH,
     TRAIN_BATCH_SIZE,
     PATCH_MAPPING_PATH,
 )
-from utils.match_prediction.column_definitions import (
-    KNOWN_CATEGORICAL_COLUMNS_NAMES,
-)
+
 from utils.match_prediction.task_definitions import TASKS, TaskType, get_enabled_tasks
 from utils.match_prediction.config import TrainingConfig
 from utils.match_prediction.train_utils import (

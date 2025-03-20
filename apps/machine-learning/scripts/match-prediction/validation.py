@@ -245,23 +245,10 @@ def main():
 
     device = get_best_device()
 
-    # Load model config
-    with open(MODEL_CONFIG_PATH, "rb") as f:
-        model_config = pickle.load(f)
-
-    # Load encoders to get number of categories
-    with open(ENCODERS_PATH, "rb") as f:
-        label_encoders = pickle.load(f)
-
-    num_categories = {
-        col: len(label_encoders[col].classes_) for col in CATEGORICAL_COLUMNS
-    }
-    num_champions, _ = get_num_champions()
+    # TODO: this file is outdated, need to update it if we want to use it again
 
     # Initialize model
     model = Model(
-        num_categories=num_categories,
-        num_champions=num_champions,
         embed_dim=model_config["embed_dim"],
         dropout=model_config["dropout"],
     )

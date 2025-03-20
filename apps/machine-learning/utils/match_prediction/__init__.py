@@ -25,6 +25,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 RAW_DATA_DIR = os.path.join(DATA_DIR, "raw_data")
 RAW_AZURE_DIR = os.path.join(DATA_DIR, "raw_azure")
 RAW_PRO_GAMES_DIR = os.path.join(DATA_DIR, "raw_pro_games")
+RAW_PRO_GAMES_FILE = os.path.join(RAW_PRO_GAMES_DIR, "pro_games.parquet")
 PREPARED_DATA_DIR = os.path.join(DATA_DIR, "prepared_data")
 MODEL_DIR = os.path.join(DATA_DIR, "models")
 # Ensure data directories exist, or create
