@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 import torch.nn as nn
+from tqdm import tqdm
 
 from utils.match_prediction import (
     get_best_device,
@@ -60,9 +61,9 @@ class FineTuningConfig:
 
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
-        self.epochs_per_unfreeze = 10  # Number of epochs before unfreezing next layer
+        self.epochs_per_unfreeze = 1  # Number of epochs before unfreezing next layer
         self.initial_frozen_layers = (
-            6  # Number of layers to start frozen (2 linear + 2 batchnorm)
+            3  # Will freeze 3 complete layer groups (3 * 4 = 12 individual layers)
         )
 
         # Data augmentation options
@@ -352,32 +353,29 @@ def create_dataloaders(
 
 
 def unfreeze_layer_group(
-    model: Model, current_unfrozen_layers: int, config: FineTuningConfig
+    model: Model, frozen_layers: int, config: FineTuningConfig
 ) -> int:
     """
     Unfreeze the next group of layers in the model.
     Returns the new count of unfrozen layer groups.
     """
     mlp_layers = list(model.mlp)
-    total_layer_groups = len(mlp_layers) // 2  # Each group has linear + batchnorm
+    if frozen_layers <= 0:
+        return 0
 
-    if current_unfrozen_layers >= total_layer_groups:
-        return current_unfrozen_layers
+    # Calculate which layer group to unfreeze (each group is 4 layers)
+    base_index = (frozen_layers - 1) * 4
 
-    # Calculate which layer group to unfreeze
-    layer_to_unfreeze = -(current_unfrozen_layers + 1) * 2
-
-    # Unfreeze the next linear + batchnorm group
-    mlp_layers[layer_to_unfreeze].requires_grad_(True)
-    mlp_layers[layer_to_unfreeze + 1].requires_grad_(True)
+    # Unfreeze all four layers in the group
+    for i in range(4):
+        mlp_layers[base_index + i].requires_grad_(True)
 
     print(
-        f"Unfreezing layer group {total_layer_groups - current_unfrozen_layers}: "
-        f"{type(mlp_layers[layer_to_unfreeze]).__name__} and "
-        f"{type(mlp_layers[layer_to_unfreeze + 1]).__name__}"
+        f"Unfreezing layer group at index {base_index}: "
+        f"{[mlp_layers[base_index + i] for i in range(4)]}"
     )
 
-    return current_unfrozen_layers + 1
+    return frozen_layers - 1
 
 
 def fine_tune_model(
@@ -396,7 +394,8 @@ def fine_tune_model(
         patch_mapping = pickle.load(f)["mapping"]
 
     # Initialize unfreezing state
-    current_unfrozen_layers = 0
+    # We start with 1 unfrozen layer
+    frozen_layers = finetune_config.initial_frozen_layers
     last_unfreeze_epoch = 0
 
     main_model_config = TrainingConfig()
@@ -426,9 +425,12 @@ def fine_tune_model(
             embedding.requires_grad_(False)
 
     # Freeze early MLP layers
-    print(f"Freezing first {finetune_config.initial_frozen_layers} MLP layers...")
+    print(f"Freezing first {finetune_config.initial_frozen_layers} MLP layer groups...")
     mlp_layers = list(model.mlp)
-    for layer in mlp_layers[: finetune_config.initial_frozen_layers]:
+    layers_to_freeze = (
+        finetune_config.initial_frozen_layers * 4
+    )  # Each group has 4 layers
+    for layer in mlp_layers[:layers_to_freeze]:
         print(f"Freezing layer: {layer}")
         layer.requires_grad_(False)
 
@@ -501,9 +503,7 @@ def fine_tune_model(
             and epoch - last_unfreeze_epoch >= finetune_config.epochs_per_unfreeze
         ):
 
-            current_unfrozen_layers = unfreeze_layer_group(
-                model, current_unfrozen_layers, finetune_config
-            )
+            frozen_layers = unfreeze_layer_group(model, frozen_layers, finetune_config)
             last_unfreeze_epoch = epoch
 
             # Reconfigure optimizer with updated trainable parameters
@@ -518,7 +518,7 @@ def fine_tune_model(
                 wandb.log(
                     {
                         "epoch": epoch,
-                        "unfrozen_layer_groups": current_unfrozen_layers,
+                        "frozen_layers": frozen_layers,
                         "trainable_params": sum(
                             p.numel() for p in model.parameters() if p.requires_grad
                         ),
@@ -534,7 +534,11 @@ def fine_tune_model(
         train_correct = 0
         train_total = 0
 
-        for batch_idx, (features, labels) in enumerate(train_loader):
+        # Use tqdm for progress tracking without loss postfix
+        progress_bar = tqdm(
+            train_loader, desc=f"Epoch {epoch+1}/{finetune_config.num_epochs}"
+        )
+        for batch_idx, (features, labels) in enumerate(progress_bar):
             features = {k: v.to(device) for k, v in features.items()}
             labels = {k: v.to(device) for k, v in labels.items()}
 
@@ -556,12 +560,6 @@ def fine_tune_model(
             preds = (probs >= 0.5).float()
             train_correct += (preds == labels["win_prediction"]).sum().item()
             train_total += labels["win_prediction"].size(0)
-
-            # Log batch progress - minimal console output
-            if batch_idx % finetune_config.log_batch_interval == 0:
-                print(
-                    f"Epoch {epoch+1}/{finetune_config.num_epochs} | Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}"
-                )
 
         avg_train_loss = train_loss / train_steps
         train_accuracy = train_correct / train_total
