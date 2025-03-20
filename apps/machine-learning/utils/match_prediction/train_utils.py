@@ -130,18 +130,20 @@ def collate_fn(
 
 
 def _initialize_queue_embeddings(
-    possible_values: list[int], embed_dim: int
+    num_queues: int, embed_dim: int, queue_encoder
 ) -> torch.Tensor:
-    """Initialize queue embeddings with base vector + small noise."""
-    queue_base_vector = torch.randn(embed_dim) * 0.1
-    queue_embeddings = torch.zeros(len(possible_values), embed_dim)
+    """Initialize queue embeddings with half random, half biased initialization."""
+    half_dim = embed_dim // 2
+    queue_embeddings = torch.randn(num_queues, embed_dim) * 0.02  # Default random init
 
+    # Only modify second half with biased initialization
+    queue_base_vector = torch.randn(half_dim) * 0.1
     print("\nQueue Embedding Initialization:")
-    for queue_id in possible_values:
-        idx = queue_id
-        noise = torch.randn(embed_dim) * 0.01
-        queue_embeddings[idx] = queue_base_vector + noise
-        print(f"Queue {queue_id}: initialized with base + noise")
+    for queue_id in queue_encoder.classes_:
+        idx = queue_encoder.transform([queue_id])[0]
+        noise = torch.randn(half_dim) * 0.01
+        queue_embeddings[idx, half_dim:] = queue_base_vector + noise
+        print(f"Queue {queue_id}: initialized with split random/biased")
 
     return queue_embeddings
 
@@ -149,13 +151,18 @@ def _initialize_queue_embeddings(
 def _initialize_champion_embeddings(
     num_champions: int,
     embed_dim: int,
-    champion_encoder: LabelEncoder,
+    champion_encoder,
     champ_to_class: dict,
     champ_display_names: dict,
 ) -> tuple[torch.Tensor, dict[ChampionClass, int], list[str]]:
-    """Initialize champion embeddings with class-based biases."""
+    """Initialize champion embeddings with half random, half class-based biases."""
+    half_dim = embed_dim // 2
+    # Initialize all embeddings with random values
+    base_embeddings = torch.randn(num_champions, embed_dim) * 0.02
+
+    # Create class means for the biased half
     class_means = {
-        class_type: torch.randn(embed_dim) * 0.1
+        class_type: torch.randn(half_dim) * 0.1
         for class_type in [
             ChampionClass.MAGE,
             ChampionClass.TANK,
@@ -168,19 +175,19 @@ def _initialize_champion_embeddings(
 
     class_counts = {class_type: 0 for class_type in ChampionClass}
     missing_class_names = []
-    base_embeddings = torch.zeros(num_champions, embed_dim)
 
+    # Only modify second half with class-based initialization
     for raw_id in champion_encoder.classes_:
         idx = champion_encoder.transform([raw_id])[0]
         if str(raw_id) == "UNKNOWN":
-            base_embeddings[idx] = torch.zeros(embed_dim)
+            base_embeddings[idx, half_dim:] = torch.zeros(half_dim)
             continue
 
         champ_class = champ_to_class.get(str(raw_id), ChampionClass.UNIQUE)
         if champ_class != ChampionClass.UNIQUE:
             mean = class_means[champ_class]
-            noise = torch.randn(embed_dim) * 0.01
-            base_embeddings[idx] = mean + noise
+            noise = torch.randn(half_dim) * 0.01
+            base_embeddings[idx, half_dim:] = mean + noise
 
         class_counts[champ_class] += 1
         if champ_class == ChampionClass.UNIQUE:
@@ -256,8 +263,9 @@ def init_model(
     if use_custom_init:
         # Initialize embeddings
         queue_embeddings = _initialize_queue_embeddings(
-            possible_values=COLUMNS["queue_type"].possible_values,
+            num_queues=len(champion_id_mapping.classes_),
             embed_dim=config.embed_dim,
+            queue_encoder=champion_id_mapping,
         )
         # Set the initialized queue embeddings
         model.embeddings["queue_type"].weight.data = queue_embeddings
@@ -286,49 +294,54 @@ def init_model(
             num_champions, class_counts, missing_class_names, config
         )
 
-        # Patch embeddings initialization (similar across patches)
-        base_patch_vector = torch.randn(config.embed_dim) * 0.1
-        patch_embeddings = torch.zeros(model.num_patches, config.embed_dim)
+        # Patch embeddings initialization (half random, half similar)
+        patch_embeddings = torch.randn(model.num_patches, config.embed_dim) * 0.02
+        half_dim = config.embed_dim // 2
+        base_patch_vector = torch.randn(half_dim) * 0.1
         for i in range(model.num_patches):
-            noise = torch.randn(config.embed_dim) * 0.01
-            patch_embeddings[i] = base_patch_vector + noise
+            noise = torch.randn(half_dim) * 0.01
+            patch_embeddings[i, half_dim:] = base_patch_vector + noise
         model.patch_embedding.weight.data = patch_embeddings
 
-        # Champion+patch embeddings initialization (based on class means)
-        champion_patch_embeddings = torch.zeros(
-            num_champions * model.num_patches, config.embed_dim
+        # Champion+patch embeddings initialization (half random, half class-based)
+        champion_patch_embeddings = (
+            torch.randn(num_champions * model.num_patches, config.embed_dim) * 0.02
         )
         for c in range(num_champions):
-            base_vector = base_embeddings[c]
+            base_vector = base_embeddings[c, half_dim:]  # Use the biased half
             for p in range(model.num_patches):
                 idx = c * model.num_patches + p
-                noise = torch.randn(config.embed_dim) * 0.01
-                champion_patch_embeddings[idx] = base_vector + noise
+                noise = torch.randn(half_dim) * 0.01
+                champion_patch_embeddings[idx, half_dim:] = base_vector + noise
         model.champion_patch_embedding.weight.data = champion_patch_embeddings
 
         # Log embedding statistics
         if config.log_wandb:
-            patch_embed_mean = patch_embeddings.mean().item()
-            patch_embed_std = patch_embeddings.std().item()
+            patch_embed_mean = patch_embeddings[:, half_dim:].mean().item()
+            patch_embed_std = patch_embeddings[:, half_dim:].std().item()
 
             # Handle single patch case
             if model.num_patches > 1:
-                patch_embed_max_diff = torch.max(torch.pdist(patch_embeddings)).item()
+                patch_embed_max_diff = torch.max(
+                    torch.pdist(patch_embeddings[:, half_dim:])
+                ).item()
             else:
                 print(
                     "Warning: Training with single patch, skipping patch distance calculations"
                 )
                 patch_embed_max_diff = 0.0
 
-            champ_patch_embed_mean = champion_patch_embeddings.mean().item()
-            champ_patch_embed_std = champion_patch_embeddings.std().item()
+            champ_patch_embed_mean = (
+                champion_patch_embeddings[:, half_dim:].mean().item()
+            )
+            champ_patch_embed_std = champion_patch_embeddings[:, half_dim:].std().item()
 
             # Handle single patch case for champion embeddings
             max_diff = 0.0
             if model.num_patches > 1:
                 for c in range(num_champions):
                     champ_embeds = champion_patch_embeddings[
-                        c * model.num_patches : (c + 1) * model.num_patches
+                        c * model.num_patches : (c + 1) * model.num_patches, half_dim:
                     ]
                     diff = torch.max(torch.pdist(champ_embeds)).item()
                     max_diff = max(max_diff, diff)
