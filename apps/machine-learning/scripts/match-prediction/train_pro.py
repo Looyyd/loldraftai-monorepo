@@ -55,7 +55,6 @@ class FineTuningConfig:
         self.save_checkpoints = False
 
         # New unfreezing parameters
-        # NOTE: it didn't change much, but it's best practice so we can maybe keep it for now
         self.progressive_unfreezing = True  # Enable progressive unfreezing
         self.epochs_per_unfreeze = 10  # Number of epochs before unfreezing next layer
         self.initial_frozen_layers = (
@@ -86,7 +85,6 @@ class ProMatchDataset(Dataset):
     def __init__(
         self,
         pro_games_df: pd.DataFrame,
-        unknown_champion_id: int,
         patch_mapping: Dict[str, int],
         train_or_test: str = "train",
         val_split: float = 0.2,
@@ -100,7 +98,6 @@ class ProMatchDataset(Dataset):
             # TODO: could have a function for this, it is done at many places and not obvious to use "mapping"
             self.champion_id_encoder = pickle.load(f)["mapping"]
 
-        self.unknown_champion_id = unknown_champion_id
         self.patch_mapping = patch_mapping
 
         # Split data into train/test
@@ -299,7 +296,6 @@ def pro_collate_fn(
 
 def create_dataloaders(
     pro_games_df,
-    unknown_champion_id,
     patch_mapping,
     config,
     current_epoch: int = 0,  # Add epoch parameter to control team symmetry
@@ -313,7 +309,6 @@ def create_dataloaders(
     # Create datasets
     train_dataset = ProMatchDataset(
         pro_games_df=pro_games_df,
-        unknown_champion_id=unknown_champion_id,
         patch_mapping=patch_mapping,
         train_or_test="train",
         val_split=config.val_split,
@@ -325,7 +320,6 @@ def create_dataloaders(
 
     val_dataset = ProMatchDataset(
         pro_games_df=pro_games_df,
-        unknown_champion_id=unknown_champion_id,
         patch_mapping=patch_mapping,
         train_or_test="test",
         val_split=config.val_split,
@@ -397,9 +391,6 @@ def fine_tune_model(
     with open(PATCH_MAPPING_PATH, "rb") as f:
         patch_mapping = pickle.load(f)["mapping"]
 
-    # this is needed because it will be processed again
-    unknown_champion_id = "UNKNOWN"
-
     # Initialize unfreezing state
     current_unfrozen_layers = 0
     last_unfreeze_epoch = 0
@@ -424,7 +415,7 @@ def fine_tune_model(
     model.to(device)
 
     # Freeze embeddings except queueId
-    print("Freezing embedding layers except queueId...")
+    print("Freezing embedding layers except queue_type...")
     model.patch_embedding.requires_grad_(False)
     model.champion_patch_embedding.requires_grad_(False)
     for name, embedding in model.embeddings.items():
@@ -474,7 +465,6 @@ def fine_tune_model(
         # Create dataloaders for this epoch - this allows team symmetry  to change based on epoch
         train_loader, val_loader = create_dataloaders(
             pro_games_df,
-            unknown_champion_id,
             patch_mapping,
             finetune_config,
             current_epoch=epoch,  # Pass current epoch to control team symmetry
