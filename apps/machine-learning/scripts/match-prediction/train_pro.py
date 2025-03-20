@@ -27,6 +27,10 @@ from utils.match_prediction.train_utils import (
 from utils.match_prediction.config import (
     TrainingConfig,
 )
+from utils.match_prediction.column_definitions import (
+    RANKED_QUEUE_INDEX,
+    PRO_QUEUE_INDEX,
+)
 
 
 # in this file we get from a row, so it's different from column_definitions.py
@@ -151,8 +155,8 @@ class ProMatchDataset(Dataset):
             self.patch_mapping[get_patch_from_raw_data(row)], dtype=torch.long
         )
 
-        # Tensor 0 is ranked solo/duo, see column_definitions.py
-        features["queue_type"] = torch.tensor(0, dtype=torch.long)
+        # Tensor 2 is reserved for pro play, see column_definitions.py
+        features["queue_type"] = torch.tensor(PRO_QUEUE_INDEX, dtype=torch.long)
         # Add numerical_elo = 0 for pro games (highest skill level)
         features["elo"] = torch.tensor(0.0, dtype=torch.long)
 
@@ -413,6 +417,14 @@ def fine_tune_model(
     }
     model.load_state_dict(fixed_state_dict)
     model.to(device)
+
+    # Initialize pro play embedding (index 2) with ranked solo/duo embedding (index 0)
+    print("Initializing pro play embedding with ranked solo/duo embedding values...")
+    with torch.no_grad():
+        ranked_solo_embedding = (
+            model.embeddings["queue_type"].weight[RANKED_QUEUE_INDEX].clone()
+        )
+        model.embeddings["queue_type"].weight[PRO_QUEUE_INDEX] = ranked_solo_embedding
 
     # Freeze embeddings except queueId
     print("Freezing embedding layers except queue_type...")

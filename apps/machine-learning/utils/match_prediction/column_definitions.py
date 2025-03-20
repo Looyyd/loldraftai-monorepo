@@ -87,7 +87,18 @@ def get_categorical_elo(df: pd.DataFrame) -> pd.Series:
     return df.apply(map_elo, axis=1)
 
 
-possible_values_queue_type = [0, 1]
+# 0: Ranked Solo/Duo
+# 1: Clash
+# 2: Reserved for pro play
+RANKED_QUEUE_INDEX = 0
+CLASH_QUEUE_INDEX = 1
+PRO_QUEUE_INDEX = 2
+
+possible_values_queue_type = [
+    RANKED_QUEUE_INDEX,
+    CLASH_QUEUE_INDEX,
+    PRO_QUEUE_INDEX,
+]
 
 
 @validate_categorical_output(possible_values_queue_type)
@@ -102,7 +113,7 @@ def get_categorical_queue_type(df: pd.DataFrame) -> pd.Series:
     if invalid_queues:
         raise ValueError(f"Unexpected queueId values found: {invalid_queues}")
 
-    queue_mapping = {420: 0, 700: 1}
+    queue_mapping = {420: RANKED_QUEUE_INDEX, 700: CLASH_QUEUE_INDEX}
     return df["queueId"].map(queue_mapping)
 
 
