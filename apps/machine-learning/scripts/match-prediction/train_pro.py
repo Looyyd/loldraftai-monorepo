@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from utils.match_prediction import (
     get_best_device,
-    MODEL_PATH,
+    load_model_state_dict,
     RAW_PRO_GAMES_FILE,
     PATCH_MAPPING_PATH,
     CHAMPION_ID_ENCODER_PATH,
@@ -407,16 +407,7 @@ def fine_tune_model(
         dropout=finetune_config.dropout,
     )
 
-    # Load pre-trained weights
-    # TODO: refactor this because used in multiple places, (load_last_trained_model function)
-    print(f"Loading pre-trained model from {pretrained_model_path}")
-    state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
-    # Remove '_orig_mod.' prefix from state dict keys if present
-    fixed_state_dict = {
-        k.replace("_orig_mod.", ""): state_dict[k] for k in state_dict.keys()
-    }
-    model.load_state_dict(fixed_state_dict)
-    model.to(device)
+    model = load_model_state_dict(model, device, path=pretrained_model_path)
 
     # Initialize pro play embedding (index 2) with ranked solo/duo embedding (index 0)
     print("Initializing pro play embedding with ranked solo/duo embedding values...")

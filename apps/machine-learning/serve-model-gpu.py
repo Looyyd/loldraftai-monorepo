@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import numpy as np
 
-from utils.match_prediction import get_best_device
+from utils.match_prediction import get_best_device, load_model_state_dict
 from utils.match_prediction.model import Model
 from utils.match_prediction import (
     MODEL_PATH,
@@ -48,15 +48,7 @@ model = Model(
     dropout=0.0,  # No dropout needed for inference
 )
 
-# Load model weights and move to device
-print(f"Loading PyTorch model from {MODEL_PATH}")
-state_dict = torch.load(MODEL_PATH, map_location=device)
-# Remove '_orig_mod.' prefix from state dict keys if present
-fixed_state_dict = {
-    k.replace("_orig_mod.", ""): state_dict[k] for k in state_dict.keys()
-}
-model.load_state_dict(fixed_state_dict)
-model.to(device)
+model = load_model_state_dict(model, device, path=MODEL_PATH)
 model.eval()
 print("Model loaded successfully")
 

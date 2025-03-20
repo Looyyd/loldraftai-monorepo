@@ -3,6 +3,7 @@ import os
 import torch
 
 from utils import DATA_DIR
+from utils.match_prediction.model import Model
 
 POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 
@@ -59,3 +60,15 @@ else:
 # Data batch size could probably be higher
 DATA_EXTRACTION_BATCH_SIZE = 512 * 4  # Used during data extraction from the database
 PARQUET_READER_BATCH_SIZE = 512 * 4  # Used when reading data from Parquet files
+
+
+def load_model_state_dict(model: Model, device: torch.device, path: str = MODEL_PATH):
+    print(f"Loading pre-trained model from {path}")
+    state_dict = torch.load(path, map_location=device, weights_only=True)
+    # Remove '_orig_mod.' prefix from state dict keys if present
+    fixed_state_dict = {
+        k.replace("_orig_mod.", ""): state_dict[k] for k in state_dict.keys()
+    }
+    model.load_state_dict(fixed_state_dict)
+    model.to(device)
+    return model

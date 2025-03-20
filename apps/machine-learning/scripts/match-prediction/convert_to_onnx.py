@@ -5,7 +5,12 @@ from pathlib import Path
 
 from utils.match_prediction.model import Model
 from utils.match_prediction.column_definitions import COLUMNS, ColumnType
-from utils.match_prediction import MODEL_PATH, MODEL_CONFIG_PATH, ONNX_MODEL_PATH
+from utils.match_prediction import (
+    MODEL_PATH,
+    MODEL_CONFIG_PATH,
+    ONNX_MODEL_PATH,
+    load_model_state_dict,
+)
 
 
 def preprocess_sample_input():
@@ -46,14 +51,7 @@ def main():
         hidden_dims=model_params["hidden_dims"],
     )
 
-    # Load weights
-    print(f"Loading model weights from {MODEL_PATH}")
-    state_dict = torch.load(MODEL_PATH, map_location="cpu")
-    # Remove '_orig_mod.' prefix from state dict keys if present
-    fixed_state_dict = {
-        k.replace("_orig_mod.", ""): state_dict[k] for k in state_dict.keys()
-    }
-    model.load_state_dict(fixed_state_dict)
+    model = load_model_state_dict(model, "cpu", path=MODEL_PATH)
     model.eval()
 
     # Create sample input for tracing
