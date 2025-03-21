@@ -97,7 +97,7 @@ PRO_QUEUE_INDEX = 2
 possible_values_queue_type = [
     RANKED_QUEUE_INDEX,
     CLASH_QUEUE_INDEX,
-    PRO_QUEUE_INDEX,
+    #PRO_QUEUE_INDEX,
 ]
 
 

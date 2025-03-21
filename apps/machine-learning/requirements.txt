@@ -12,6 +12,7 @@ torchaudio
 torchinfo
 tensorboard
 onnx
+onnxruntime
 
 # Reinforcement Learning
 stable_baselines3
