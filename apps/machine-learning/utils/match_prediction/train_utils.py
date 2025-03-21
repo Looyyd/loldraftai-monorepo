@@ -17,6 +17,7 @@ from utils.match_prediction import (
 from utils.match_prediction.column_definitions import (
     COLUMNS,
     KNOWN_CATEGORICAL_COLUMNS_NAMES,
+    possible_values_queue_type,
     ColumnType,
 )
 from utils.match_prediction.task_definitions import TASKS, TaskType
@@ -130,19 +131,18 @@ def collate_fn(
 
 
 def _initialize_queue_embeddings(
-    num_queues: int, embed_dim: int, queue_encoder
+     embed_dim: int
 ) -> torch.Tensor:
     """Initialize queue embeddings with half random, half biased initialization."""
     half_dim = embed_dim // 2
-    queue_embeddings = torch.randn(num_queues, embed_dim) * 0.02  # Default random init
+    queue_embeddings = torch.randn(len(possible_values_queue_type), embed_dim) * 0.02  # Default random init
 
     # Only modify second half with biased initialization
     queue_base_vector = torch.randn(half_dim) * 0.1
     print("\nQueue Embedding Initialization:")
-    for queue_id in queue_encoder.classes_:
-        idx = queue_encoder.transform([queue_id])[0]
+    for queue_id in possible_values_queue_type:
         noise = torch.randn(half_dim) * 0.01
-        queue_embeddings[idx, half_dim:] = queue_base_vector + noise
+        queue_embeddings[queue_id, half_dim:] = queue_base_vector + noise
         print(f"Queue {queue_id}: initialized with split random/biased")
 
     return queue_embeddings
@@ -234,7 +234,7 @@ def init_model(
     num_champions: int,
     continue_training: bool,
     load_path: Optional[str] = None,
-    use_custom_init: bool = False,
+    use_custom_init: bool = True,
 ) -> Model:
     """Initialize the model with pre-initialized embeddings.
 
@@ -263,9 +263,7 @@ def init_model(
     if use_custom_init:
         # Initialize embeddings
         queue_embeddings = _initialize_queue_embeddings(
-            num_queues=len(champion_id_mapping.classes_),
             embed_dim=config.embed_dim,
-            queue_encoder=champion_id_mapping,
         )
         # Set the initialized queue embeddings
         model.embeddings["queue_type"].weight.data = queue_embeddings
