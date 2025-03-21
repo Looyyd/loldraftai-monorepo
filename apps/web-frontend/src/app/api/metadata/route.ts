@@ -52,7 +52,13 @@ export async function GET() {
     }
 
     const data = await response.json();
-    return new NextResponse(JSON.stringify(data), {
+    // Sort patches alphabetically and get only the last 3
+    const filteredData = {
+      ...data,
+      patches: [...data.patches].sort().slice(-3),
+    };
+
+    return new NextResponse(JSON.stringify(filteredData), {
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
