@@ -6,9 +6,8 @@
 !serve-model.py
 !utils/
 !data/models/match_outcome_model.onnx
-!data/label_encoders.pkl
+!data/champion_id_encoder.pkl
 !data/model_config.pkl
-!data/numerical_feature_stats.pkl
 !data/task_stats.pkl
 !data/prepared_data/patch_mapping.pkl
 
