@@ -53,7 +53,9 @@ with open(MODEL_CONFIG_PATH, "rb") as f:
 model = Model(
     config=TrainingConfig(),
     hidden_dims=model_config["hidden_dims"],
-    dropout=0.0,  # No dropout needed for inference
+    dropout=model_config.get(
+        "dropout", 0.25
+    ),  # Use dropout from config or default to 0.25
 )
 
 model = load_model_state_dict(model, device, path=MODEL_PATH)
@@ -231,11 +233,81 @@ async def predict(input_data: APIInput, api_key: str = Depends(verify_api_key)):
     return batch_result[0]
 
 
+def monte_carlo_dropout_prediction(model_inputs: dict, n_samples: int = 10000) -> dict:
+    """
+    Perform Monte Carlo Dropout inference to estimate prediction uncertainty using batched predictions
+    """
+    # Store original states
+    training_states = {}
+    for name, module in model.named_modules():
+        if isinstance(module, (torch.nn.Dropout,)):
+            training_states[name] = module.training
+            module.train()
+        else:
+            module.eval()
+
+    # Replicate inputs n_samples times
+    batched_inputs = {
+        k: (
+            v.repeat(n_samples, *[1] * (len(v.shape) - 1))
+            if isinstance(v, torch.Tensor)
+            else v
+        )
+        for k, v in model_inputs.items()
+    }
+
+    # Single forward pass with the batched inputs
+    with torch.no_grad():
+        if use_mixed_precision:
+            with torch.amp.autocast(device.type):
+                outputs = model(batched_inputs)
+        else:
+            outputs = model(batched_inputs)
+
+        win_pred = torch.sigmoid(outputs["win_prediction"]).cpu().numpy()
+
+    # Calculate statistics
+    mean_pred = np.mean(win_pred)
+
+    # Calculate asymmetric 95% confidence intervals
+    lower_percentile = np.percentile(win_pred, 2.5)  # 2.5th percentile
+    upper_percentile = np.percentile(win_pred, 97.5)  # 97.5th percentile
+
+    # Calculate how far these are from the mean (asymmetric intervals)
+    confidence_interval_minus = mean_pred - lower_percentile
+    confidence_interval_plus = upper_percentile - mean_pred
+
+    # Restore original states
+    for name, module in model.named_modules():
+        if name in training_states:
+            module.training = training_states[name]
+    model.eval()
+
+    return {
+        "mean_predictions": mean_pred,
+        "confidence_interval_minus": float(confidence_interval_minus),
+        "confidence_interval_plus": float(confidence_interval_plus),
+        "lower_bound": float(lower_percentile),
+        "upper_bound": float(upper_percentile),
+    }
+
+
 @app.post("/predict-in-depth")
 async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_api_key)):
     """Detailed prediction with champion impact analysis"""
     # Base prediction first
     base_model_inputs = preprocess_batch([api_input])
+
+    # Add Monte Carlo Dropout prediction for testing
+    mc_results = monte_carlo_dropout_prediction(base_model_inputs)
+    print(f"Monte Carlo Dropout Results:")
+    print(f"Mean prediction: {mc_results['mean_predictions']:.3f}")
+    print(f"95% CI: [{mc_results['lower_bound']:.3f}, {mc_results['upper_bound']:.3f}]")
+    print(
+        f"Asymmetric intervals: -{mc_results['confidence_interval_minus']:.3f}/+{mc_results['confidence_interval_plus']:.3f}"
+    )
+
+    # Continue with regular prediction...
     with torch.no_grad():
         if use_mixed_precision:
             with torch.amp.autocast(device.type):
