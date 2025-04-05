@@ -64,7 +64,6 @@ export function FeaturesShowcase() {
                       width={1920}
                       height={1080}
                       className="w-full h-full object-contain"
-                      priority
                     />
                   </div>
                   <div className="p-6 bg-card">
