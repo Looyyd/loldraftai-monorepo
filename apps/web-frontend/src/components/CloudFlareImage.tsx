@@ -1,15 +1,17 @@
-import Image, { ImageProps } from "next/image";
-
-const CloudFlareImage = (props: ImageProps) => {
+const CloudFlareImage = (
+  props: Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> & {
+    src: string;
+  }
+) => {
   // Construct the full URL directly
   const fullSrc = `https://media.loldraftai.com${props.src}`;
 
   return (
-    <Image
+    <img
       {...props}
       src={fullSrc}
-      alt={props.alt || "Image"} // Ensure alt is always provided
-      unoptimized={true} // Let Cloudflare handle optimization
+      alt={props.alt || "Image"} // Maintain the fallback alt text for accessibility
+      loading="lazy" // Keep lazy loading behavior
     />
   );
 };
