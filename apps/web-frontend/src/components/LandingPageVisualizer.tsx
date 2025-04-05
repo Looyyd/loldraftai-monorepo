@@ -32,10 +32,8 @@ const AnimatedChampionIcon = ({
       <CloudFlareImage
         src={`/icons/champions/${champion.icon}`}
         alt={champion.name}
-        fill
         className="rounded-full object-cover"
         sizes="48px"
-        priority
       />
     </motion.div>
   </AnimatePresence>
