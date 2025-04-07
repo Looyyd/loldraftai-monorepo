@@ -60,9 +60,8 @@ export default function HomePage() {
                   className="text-primary hover:underline"
                 >
                   See how our draft AI outperforms other tools like DraftGap in
-                  our detailed comparison
-                </Link>{" "}
-                (65.6% vs 56.5% prediction accuracy).
+                  our detailed comparison.
+                </Link>
               </p>
               <div className="mt-12 w-full flex justify-center">
                 <AnimatedButton href="/draft">
