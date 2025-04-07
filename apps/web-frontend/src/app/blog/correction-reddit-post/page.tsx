@@ -79,11 +79,12 @@ export default function CorrectionRedditPost() {
       </p>
       <h2> Further details for technical readers</h2>
       <p>
-        The loss of the new model is of 0,684, which could seems high for a
-        binary classification task(always guessing 50% win chance would lead to
-        a loss of 0,693). But concidering that the task is really hard and
-        noisy, it's hard to say. I will in the future a game to let users
-        predict outcomes, to achieve a baseline to compare the model to.
+        The loss of the new model is of 0,684 for the win prediction task, which
+        could seems high for a binary classification task(always guessing 50%
+        win chance would lead to a loss of 0,693). But concidering that the task
+        is really hard and noisy, it&apos;s hard to say. I will in the future a
+        game to let users predict outcomes, to achieve a baseline to compare the
+        model to.
       </p>
       <p>
         I will also try to provide more metrics and verification methods for the
