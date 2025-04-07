@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,17 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
               You might notice some changes in predictions compared to before.
               This is expected and represents more accurate assessments of draft
               outcomes.
+            </p>
+            <p className="text-sm mt-4">
+              For more technical details about this update, you can read our{" "}
+              <Link
+                href="/blog/correction-reddit-post"
+                className="text-primary hover:underline"
+                onClick={closeHandler}
+              >
+                detailed blog post
+              </Link>
+              .
             </p>
           </div>
         </div>
