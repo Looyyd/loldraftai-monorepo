@@ -22,6 +22,13 @@ const BrandedText = ({ text }: { text: string }) => {
 
 const blogPosts: BlogPost[] = [
   {
+    title: "Correction: Reddit Post Accuracy Claims",
+    description:
+      "A correction regarding the previously claimed 62% accuracy statistics that were affected by overfitting issues.",
+    date: "2025-04-07",
+    slug: "correction-reddit-post",
+  },
+  {
     title:
       "LR vs NORD: How LoLDraftAI Can Help to Improve Draft Preparation In Pro Play",
     description:
