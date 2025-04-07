@@ -41,7 +41,7 @@ export default function CorrectionRedditPost() {
         duplicates, even after splitting the data into 2, most rows were present
         both in train and in test data. When this happens, it is not possible to
         detect when the model overfits, which means that the model memorizes
-        matche outcomes, instead of learning general patterns.
+        match outcomes, instead of learning general patterns.
       </p>
       <p>
         Why exactly the data from EUW was marked as coming from KR, OCE and NA?
@@ -61,7 +61,7 @@ export default function CorrectionRedditPost() {
       />
       <h2>Bug resolution</h2>
       <p>
-        I quickly fixed the bug that deduplicates the rows, and uploaded a fixed
+        I quickly fixed the bug that duplicated the rows, and uploaded a fixed
         version of the model on April 4, around 2 days after my Reddit post.
         This new model has an accuracy of 55%. Data collection was also fixed,
         so perhaps after gathering more data from other regions, the accuracy
@@ -79,12 +79,12 @@ export default function CorrectionRedditPost() {
       </p>
       <h2> Further details for technical readers</h2>
       <p>
-        The loss of the new model is of 0,684 for the win prediction task, which
-        could seems high for a binary classification task(always guessing 50%
-        win chance would lead to a loss of 0,693). But concidering that the task
-        is really hard and noisy, it&apos;s hard to say. I will in the future a
-        game to let users predict outcomes, to achieve a baseline to compare the
-        model to.
+        The loss of the new model is of 0.684 for the win prediction task, which
+        might seem high for a binary classification task (always guessing 50%
+        win chance would lead to a loss of 0.693). But considering that the task
+        is really hard and noisy, it&apos;s hard to say. I will create in the
+        future a game to let users predict outcomes, to achieve a baseline to
+        compare the model to.
       </p>
       <p>
         I will also try to provide more metrics and verification methods for the
