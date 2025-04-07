@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { ClickableImage } from "@/components/ClickableImage";
 import BlogLayout from "@/components/BlogLayout";
 
