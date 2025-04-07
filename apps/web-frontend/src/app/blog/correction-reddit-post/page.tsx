@@ -18,10 +18,11 @@ export default function CorrectionRedditPost() {
         correct, the accuracy claims were affected by overfitting issues.
       </p>
       <p>
-        TLDR: Two days after the Reddit post, the true accuracy was 52% and the
-        model was too confident, giving extreme predictions. The model is now
-        fixed, and the accuracy is around 55% (as of April 7 2025), the model
-        also gives more reasonable predictions. Thanks to user{" "}
+        TLDR: When I posted the Reddit post and for 2 days after, the true
+        accuracy was 52% and the model was too confident, giving extreme
+        predictions. The model is now fixed, and the accuracy is around 55% (as
+        of April 4 2025), the model also gives more reasonable predictions.
+        Thanks to user{" "}
         <a href="https://www.reddit.com/user/Impossible_Concert88/">
           /u/Impossible_Concert88
         </a>{" "}
