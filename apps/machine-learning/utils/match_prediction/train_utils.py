@@ -124,7 +124,10 @@ def collate_fn(
     # Convert labels to tensors directly
     collated_labels = {
         task_name: torch.tensor([item[task_name] for item in batch], dtype=torch.float)
+        # Only collate labels that actually exist in the input data
+        # TODO: this is only because of masked losses, maybe could be refactored to only ignore those
         for task_name in TASKS
+        if task_name in batch[0]
     }
 
     return collated, collated_labels

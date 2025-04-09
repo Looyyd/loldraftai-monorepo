@@ -246,6 +246,28 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
     base_win_pred = base_outputs["win_prediction"]
     base_win_prob = float(torch.sigmoid(base_win_pred).cpu().numpy()[0])
 
+    # Debug logs for time-bucketed win predictions
+    time_bucket_tasks = [
+        "win_prediction_0_20",
+        "win_prediction_20_25",
+        "win_prediction_25_30",
+        "win_prediction_30_35",
+        "win_prediction_35_40",
+        "win_prediction_40_inf",
+    ]
+
+    print("\n===== TIME-BUCKETED WIN PREDICTIONS =====")
+    print(f"Overall win probability: {base_win_prob:.2%}")
+
+    for task in time_bucket_tasks:
+        if task in base_outputs:
+            bucket_pred = base_outputs[task]
+            bucket_prob = float(torch.sigmoid(bucket_pred).cpu().numpy()[0])
+            bucket_name = task.replace("win_prediction_", "")
+            print(f"{bucket_name} min: {bucket_prob:.2%}")
+
+    print("=========================================\n")
+
     # Calculate gold differences
     gold_diffs = calculate_gold_differences(base_outputs)
 

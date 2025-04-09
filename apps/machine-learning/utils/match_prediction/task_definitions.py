@@ -112,43 +112,44 @@ TASKS = {
         name="win_prediction",
         getter=get_win_prediction,
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=1,
+        weight=0.9,
     ),
     "gameDuration": TaskDefinition(
         name="gameDuration",
         task_type=TaskType.REGRESSION,
         weight=0.05,
     ),
-    # "blue_has_gold_lead_at_20": TaskDefinition(
-    #     name="blue_has_gold_lead_at_20",
-    #     getter=blue_has_gold_lead_at_20,
-    #     task_type=TaskType.BINARY_CLASSIFICATION,
-    #     weight=0.15,
-    # ),
-    # "red_has_gold_lead_at_20": TaskDefinition(
-    #     name="red_has_gold_lead_at_20",
-    #     getter=red_has_gold_lead_at_20,
-    #     task_type=TaskType.BINARY_CLASSIFICATION,
-    #     weight=0.15,
-    # ),
-    # "gold_is_even_at_20": TaskDefinition(
-    #     name="gold_is_even_at_20",
-    #     getter=gold_is_even_at_20,
-    #     task_type=TaskType.BINARY_CLASSIFICATION,
-    #     weight=0.15,
-    # ),
-    # "gold_diff_at_20": TaskDefinition(
-    #     name="gold_diff_at_20",
-    #     getter=get_gold_diff_at_20,
-    #     task_type=TaskType.REGRESSION,
-    #     weight=0.15,
-    # ),
-    # "total_kills_at_20": TaskDefinition(
-    #     name="total_kills_at_20",
-    #     getter=get_total_kills_at_20,
-    #     task_type=TaskType.REGRESSION,
-    #     weight=0.15,
-    # ),
+    # Add win prediction tasks based on game duration buckets
+    "win_prediction_0_20": TaskDefinition(
+        name="win_prediction_0_20",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_20_25": TaskDefinition(
+        name="win_prediction_20_25",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_25_30": TaskDefinition(
+        name="win_prediction_25_30",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_30_35": TaskDefinition(
+        name="win_prediction_30_35",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_35_40": TaskDefinition(
+        name="win_prediction_35_40",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_40_inf": TaskDefinition(
+        name="win_prediction_40_inf",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
 }
 
 
@@ -214,7 +215,38 @@ def get_final_tasks() -> Dict[str, TaskDefinition]:
             name="win_prediction",
             getter=get_win_prediction,
             task_type=TaskType.BINARY_CLASSIFICATION,
-            weight=1,
+            weight=0.9,
+        ),
+        # Add win prediction tasks based on game duration buckets
+        "win_prediction_0_20": TaskDefinition(
+            name="win_prediction_0_20",
+            task_type=TaskType.BINARY_CLASSIFICATION,
+            weight=0.1,
+        ),
+        "win_prediction_20_25": TaskDefinition(
+            name="win_prediction_20_25",
+            task_type=TaskType.BINARY_CLASSIFICATION,
+            weight=0.1,
+        ),
+        "win_prediction_25_30": TaskDefinition(
+            name="win_prediction_25_30",
+            task_type=TaskType.BINARY_CLASSIFICATION,
+            weight=0.1,
+        ),
+        "win_prediction_30_35": TaskDefinition(
+            name="win_prediction_30_35",
+            task_type=TaskType.BINARY_CLASSIFICATION,
+            weight=0.1,
+        ),
+        "win_prediction_35_40": TaskDefinition(
+            name="win_prediction_35_40",
+            task_type=TaskType.BINARY_CLASSIFICATION,
+            weight=0.1,
+        ),
+        "win_prediction_40_inf": TaskDefinition(
+            name="win_prediction_40_inf",
+            task_type=TaskType.BINARY_CLASSIFICATION,
+            weight=0.1,
         ),
     }
 

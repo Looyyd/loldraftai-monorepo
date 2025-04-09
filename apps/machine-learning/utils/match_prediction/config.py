@@ -8,7 +8,7 @@ class TrainingConfig:
     def __init__(self):
         # Default values
         self.num_epochs = 75
-        self.annealing_epoch = 75
+        self.annealing_epoch = 60
         self.hidden_dims = [1024, 512, 256, 128, 64]
         self.dropout = 0.5
         self.learning_rate = 5e-4
@@ -39,8 +39,8 @@ class TrainingConfig:
         self.use_one_cycle_lr = True
         self.max_lr = self.learning_rate
         self.pct_start = 0.2
-        self.div_factor = 5
-        self.final_div_factor = 1e4  # Increased from 1e3 to get smaller final lr
+        self.div_factor = 10
+        self.final_div_factor = 3e4
 
         # Add new configuration parameters
         self.validation_interval = 1  # Run validation every N epochs

@@ -85,6 +85,11 @@ class Model(nn.Module):
                 TaskType.REGRESSION,
             ]:
                 self.output_layers[task_name] = nn.Linear(hidden_dims[-1], 1)
+            # No need for specific handling for bucketed tasks here,
+            # as they are already covered by BINARY_CLASSIFICATION
+            elif task_name.startswith("win_prediction_"):
+                 # Already handled by the BINARY_CLASSIFICATION check above
+                 pass
             else:
                 raise ValueError(f"Unknown task type: {task_def.task_type}")
 

@@ -24,6 +24,7 @@ from utils.match_prediction import (
     MODEL_PATH,
     TRAIN_BATCH_SIZE,
     PATCH_MAPPING_PATH,
+    TASK_STATS_PATH,
 )
 from utils.match_prediction.column_definitions import possible_values_elo
 from utils.match_prediction.task_definitions import (
@@ -88,6 +89,7 @@ def train_epoch(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
+    task_stats: Dict[str, Dict[str, float]],
 ) -> Tuple[float, int]:
     model.train()
     epoch_loss = 0.0
@@ -98,6 +100,10 @@ def train_epoch(
         [task_def.weight for task_def in enabled_tasks.values()], device=device
     )
 
+    # Denormalize game duration to apply masks
+    game_duration_mean = task_stats["means"]["gameDuration"]
+    game_duration_std = task_stats["stds"]["gameDuration"]
+
     for batch_idx, (features, labels) in enumerate(train_loader):
         features = {k: v.to(device, non_blocking=True) for k, v in features.items()}
         labels = {k: v.to(device, non_blocking=True) for k, v in labels.items()}
@@ -106,16 +112,62 @@ def train_epoch(
         if "win_prediction" in TASKS:
             labels["win_prediction"] = apply_label_smoothing(labels["win_prediction"])
 
+        # Denormalize game duration for this batch
+        game_duration_seconds = (
+            labels["gameDuration"] * game_duration_std + game_duration_mean
+        )
+        # Create masks for duration buckets (in minutes)
+        masks = {
+            "0_20": game_duration_seconds < 20 * 60,
+            "20_25": (game_duration_seconds >= 20 * 60)
+            & (game_duration_seconds < 25 * 60),
+            "25_30": (game_duration_seconds >= 25 * 60)
+            & (game_duration_seconds < 30 * 60),
+            "30_35": (game_duration_seconds >= 30 * 60)
+            & (game_duration_seconds < 35 * 60),
+            "35_40": (game_duration_seconds >= 35 * 60)
+            & (game_duration_seconds < 40 * 60),
+            "40_inf": game_duration_seconds >= 40 * 60,
+        }
+
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             outputs = model(features)
-            losses = torch.stack(
+            # Calculate individual task losses, applying masks for bucketed win prediction
+            individual_losses = {}
+            for task_name in task_names:
+                # Determine the correct label source
+                if task_name.startswith("win_prediction_"):
+                    target_label = labels["win_prediction"]
+                else:
+                    target_label = labels[task_name]
+                loss_fn = criterion[task_name]
+
+                if (
+                    task_name.startswith("win_prediction_")
+                    and task_name != "win_prediction"
+                ):
+                    bucket_key = task_name.split("win_prediction_")[1]
+                    mask = masks[bucket_key]
+                    if (
+                        mask.any()
+                    ):  # Only calculate loss if there are samples in the bucket
+                        loss = loss_fn(outputs[task_name][mask], target_label[mask])
+                    else:
+                        loss = torch.tensor(0.0, device=device)  # No samples, no loss
+                else:
+                    loss = loss_fn(outputs[task_name], target_label)
+
+                individual_losses[task_name] = loss
+
+            # Combine weighted losses
+            weighted_losses = torch.stack(
                 [
-                    criterion[task_name](outputs[task_name], labels[task_name])
-                    for task_name in task_names
+                    individual_losses[name] * task_weights[i]
+                    for i, name in enumerate(task_names)
                 ]
             )
-            task_loss = (losses * task_weights).sum()
+            task_loss = weighted_losses.sum()
 
             total_loss = task_loss
 
@@ -186,7 +238,7 @@ def train_epoch(
                     epoch,
                     batch_idx,
                     grad_norm,
-                    losses,
+                    individual_losses,
                     task_names,
                     config,
                     current_lr,
@@ -206,7 +258,7 @@ def log_training_step(
     epoch: int,
     batch_idx: int,
     grad_norm: float,
-    losses: torch.Tensor,
+    losses: Dict[str, torch.Tensor],
     task_names: List[str],
     config: TrainingConfig,
     current_lr: float,
@@ -249,9 +301,8 @@ def log_training_step(
             "mlp_norm": mlp_norm,
             "output_layers_norm": output_norm,
         }
-        log_data.update(
-            {f"train_loss_{k}": v.item() for k, v in zip(task_names, losses)}
-        )
+        # Log individual task losses
+        log_data.update({f"train_loss_{k}": v.item() for k, v in losses.items()})
 
         wandb.log(log_data)
 
@@ -262,13 +313,18 @@ def validate(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
+    task_stats: Dict[str, Dict[str, float]],
 ) -> Tuple[Optional[float], Dict[str, float]]:
     model.eval()
     enabled_tasks = get_enabled_tasks(config, epoch)
 
-    # Initialize accumulators on the device (GPU/MPS) to avoid CPU-GPU transfers
+    # Use nested dict for loss accumulators: {task_name: {loss_sum: tensor, count: tensor}}
     loss_accumulators = {
-        task_name: torch.zeros(2, device=device) for task_name in enabled_tasks.keys()
+        task_name: {
+            "loss_sum": torch.zeros(1, device=device),
+            "count": torch.zeros(1, device=device),
+        }
+        for task_name in enabled_tasks.keys()
     }
 
     # Add accuracy accumulator for win_prediction
@@ -286,16 +342,26 @@ def validate(
         reverse_patch_mapping = None
 
     # Subset accumulators for win prediction (on GPU)
-    if config.track_subset_val_losses and "win_prediction" in enabled_tasks:
+    if config.track_subset_val_losses:
         patch_losses = {}  # {patch_val: [loss_sum, count]}
         elo_losses = {}  # {elo_val: [loss_sum, count]}
         queue_losses = {}  # {queue_id: [loss_sum, count]}
+        # Add subset accumulators for bucketed win predictions
+        bucketed_win_losses = {
+            task: {}
+            for task in enabled_tasks
+            if task.startswith("win_prediction_") and task != "win_prediction"
+        }
 
     total_loss = torch.tensor(0.0, device=device)
     total_steps = 0
     task_weights = torch.tensor(
         [task_def.weight for task_def in enabled_tasks.values()], device=device
     )
+
+    # Denormalize game duration once
+    game_duration_mean = task_stats["means"]["gameDuration"]
+    game_duration_std = task_stats["stds"]["gameDuration"]
 
     with torch.no_grad():
         for features, labels in test_loader:
@@ -308,25 +374,82 @@ def validate(
                 dtype=torch.bfloat16,
             ):
                 outputs = model(features)
+
+                # Denormalize game duration for this batch
+                game_duration_seconds = (
+                    labels["gameDuration"] * game_duration_std + game_duration_mean
+                )
+                # Create masks for duration buckets (in minutes)
+                masks = {
+                    "0_20": game_duration_seconds < 20 * 60,
+                    "20_25": (game_duration_seconds >= 20 * 60)
+                    & (game_duration_seconds < 25 * 60),
+                    "25_30": (game_duration_seconds >= 25 * 60)
+                    & (game_duration_seconds < 30 * 60),
+                    "30_35": (game_duration_seconds >= 30 * 60)
+                    & (game_duration_seconds < 35 * 60),
+                    "35_40": (game_duration_seconds >= 35 * 60)
+                    & (game_duration_seconds < 40 * 60),
+                    "40_inf": game_duration_seconds >= 40 * 60,
+                }
+
                 if config.calculate_val_loss:
                     # Calculate all task losses once using functional versions
                     task_losses = {}
                     for task_name, task_def in enabled_tasks.items():
+                        # Determine the correct label source
+                        if task_name.startswith("win_prediction_"):
+                            target_label = labels["win_prediction"]
+                        else:
+                            target_label = labels[task_name]
+
                         if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
                             loss = nn.functional.binary_cross_entropy_with_logits(
-                                outputs[task_name], labels[task_name], reduction="none"
+                                outputs[task_name], target_label, reduction="none"
                             )
                         elif task_def.task_type == TaskType.REGRESSION:
                             loss = nn.functional.mse_loss(
-                                outputs[task_name], labels[task_name], reduction="none"
+                                outputs[task_name], target_label, reduction="none"
                             )
+                        else:
+                            loss = torch.zeros_like(
+                                outputs[task_name]
+                            )  # Placeholder for masked tasks
+
+                        # For bucketed win prediction, calculate loss only for relevant samples
+                        if (
+                            task_name.startswith("win_prediction_")
+                            and task_name != "win_prediction"
+                        ):
+                            bucket_key = task_name.split("win_prediction_")[1]
+                            mask = masks[bucket_key]
+                            if mask.any():
+                                loss_fn = nn.functional.binary_cross_entropy_with_logits
+                                loss[mask] = loss_fn(
+                                    outputs[task_name][mask],
+                                    target_label[mask],
+                                    reduction="none",
+                                )
+                            # Loss remains zero for samples outside the mask
+
                         task_losses[task_name] = loss
 
                     # Update loss accumulators
                     for task_name, loss in task_losses.items():
                         loss_sum = loss.sum()
-                        loss_accumulators[task_name][0] += loss_sum
-                        loss_accumulators[task_name][1] += batch_size
+                        # For bucketed tasks, count only the samples where loss was calculated
+                        if (
+                            task_name.startswith("win_prediction_")
+                            and task_name != "win_prediction"
+                        ):
+                            bucket_key = task_name.split("win_prediction_")[1]
+                            mask = masks[bucket_key]
+                            count = mask.sum()
+                            loss_accumulators[task_name]["loss_sum"] += loss_sum
+                            loss_accumulators[task_name]["count"] += count
+                        else:
+                            loss_accumulators[task_name]["loss_sum"] += loss_sum
+                            loss_accumulators[task_name]["count"] += batch_size
 
                     # Calculate total weighted loss
                     losses = torch.stack([loss.mean() for loss in task_losses.values()])
@@ -339,15 +462,28 @@ def validate(
                         # Predicted win if probability > 0.5
                         predictions = (win_probs > 0.5).float()
                         # Count correct predictions
-                        correct = (predictions == labels["win_prediction"]).sum()
-                        win_prediction_accuracy[0] += correct
-                        win_prediction_accuracy[1] += batch_size
+                        correct = (predictions == target_label).sum()
+                        # Accumulate based on mask for bucketed tasks
+                        if (
+                            task_name.startswith("win_prediction_")
+                            and task_name != "win_prediction"
+                        ):
+                            bucket_key = task_name.split("win_prediction_")[1]
+                            mask = masks[bucket_key]
+                            if mask.any():
+                                correct_masked = (
+                                    predictions[mask] == target_label[mask]
+                                ).sum()
+                                # Store accuracy for this bucket separately if needed
+                                # For now, just add to the main accuracy accumulator
+                                win_prediction_accuracy[0] += correct_masked
+                                win_prediction_accuracy[1] += mask.sum()
+                        else:  # For the main win_prediction task
+                            win_prediction_accuracy[0] += correct
+                            win_prediction_accuracy[1] += batch_size
 
                     # Track subset losses if needed
-                    if (
-                        config.track_subset_val_losses
-                        and "win_prediction" in enabled_tasks
-                    ):
+                    if config.track_subset_val_losses:
                         win_pred_losses = task_losses["win_prediction"]
                         for key, values in [
                             ("patch", features["patch"]),
@@ -370,6 +506,39 @@ def validate(
                                 current_metrics[val_item][0] += sum_val.item()
                                 current_metrics[val_item][1] += count.item()
 
+                        # Track subset losses for bucketed predictions
+                        for task_name in bucketed_win_losses.keys():
+                            bucket_key = task_name.split("win_prediction_")[1]
+                            mask = masks[bucket_key]
+                            if mask.any():
+                                bucket_losses = task_losses[task_name][mask]
+                                bucket_values = features["patch"][
+                                    mask
+                                ]  # Track by patch for now
+                                unique_vals, inverse = torch.unique(
+                                    bucket_values, return_inverse=True
+                                )
+                                counts = torch.bincount(inverse)
+                                sums = torch.zeros_like(
+                                    unique_vals, dtype=torch.float, device=device
+                                )
+                                sums.scatter_add_(0, inverse, bucket_losses)
+                                for val, sum_val, count in zip(
+                                    unique_vals, sums, counts
+                                ):
+                                    val_item = val.item()
+                                    if val_item not in bucketed_win_losses[task_name]:
+                                        bucketed_win_losses[task_name][val_item] = [
+                                            0.0,
+                                            0,
+                                        ]
+                                    bucketed_win_losses[task_name][val_item][
+                                        0
+                                    ] += sum_val.item()
+                                    bucketed_win_losses[task_name][val_item][
+                                        1
+                                    ] += count.item()
+
             total_steps += 1
 
     # Compute final metrics and transfer only the result to CPU
@@ -377,15 +546,15 @@ def validate(
     avg_loss = (total_loss / total_steps).item() if config.calculate_val_loss else None
 
     # Add win prediction accuracy to metrics
-    if win_prediction_accuracy is not None:
+    if win_prediction_accuracy is not None and win_prediction_accuracy[1] > 0:
         accuracy = (win_prediction_accuracy[0] / win_prediction_accuracy[1]).item()
         losses["win_prediction_accuracy"] = accuracy
 
     # Add subset metrics to the metrics dictionary
-    if config.track_subset_val_losses and "win_prediction" in enabled_tasks:
-        # Patch metrics
+    if config.track_subset_val_losses:
+        # Patch metrics for main win prediction
         for patch_val, (loss_sum, count) in patch_losses.items():
-            if reverse_patch_mapping:
+            if reverse_patch_mapping and count > 0:
                 original_patch = reverse_patch_mapping.get(patch_val)
                 losses[f"win_prediction_patch_{original_patch}"] = loss_sum / count
 
@@ -397,16 +566,29 @@ def validate(
         for queue_val, (loss_sum, count) in queue_losses.items():
             losses[f"win_prediction_queue_{queue_val}"] = loss_sum / count
 
+        # Add subset metrics for bucketed win predictions (by patch)
+        for task_name, patch_data in bucketed_win_losses.items():
+            for patch_val, (loss_sum, count) in patch_data.items():
+                if reverse_patch_mapping and count > 0:
+                    original_patch = reverse_patch_mapping.get(patch_val)
+                    metric_name = f"val_{task_name}_patch_{original_patch}"
+                    losses[metric_name] = loss_sum / count
+
     return avg_loss, losses
 
 
 def calculate_final_loss(
-    loss_accumulators: Dict[str, torch.Tensor],
+    loss_accumulators: Dict[str, Dict[str, torch.Tensor]],
 ) -> Dict[str, float]:
     losses = {}
     for task_name, accumulator in loss_accumulators.items():
-        # Calculate average loss for all task types
-        losses[task_name] = (accumulator[0] / accumulator[1]).item()
+        # Calculate average loss using sum and count
+        loss_sum = accumulator["loss_sum"].item()
+        count = accumulator["count"].item()
+        if count > 0:
+            losses[task_name] = loss_sum / count
+        else:
+            losses[task_name] = 0.0  # Assign 0 if no samples were counted
     return losses
 
 
@@ -462,6 +644,16 @@ def train_model(
         config_dict = config.to_dict()
         config_dict["num_samples"] = len(train_dataset)
         wandb.init(project="draftking", name=run_name, config=config_dict)
+
+    # Load task statistics
+    try:
+        with open(TASK_STATS_PATH, "rb") as f:
+            task_stats = pickle.load(f)
+    except FileNotFoundError:
+        print(
+            f"Error: Task stats file not found at {TASK_STATS_PATH}. Please run prepare_data.py first."
+        )
+        exit(1)
 
     train_loader, test_loader, test_masked_loader = (
         DataLoader(
@@ -523,6 +715,7 @@ def train_model(
             config,
             device,
             epoch,
+            task_stats,
         )
         avg_loss = epoch_loss / epoch_steps * config.accumulation_steps
 
@@ -532,9 +725,11 @@ def train_model(
 
         # Only run validation on specified intervals
         if (epoch + 1) % config.validation_interval == 0:
-            val_loss, val_metrics = validate(model, test_loader, config, device, epoch)
+            val_loss, val_metrics = validate(
+                model, test_loader, config, device, epoch, task_stats
+            )
             val_masked_loss, val_masked_metrics = validate(
-                model, test_masked_loader, config, device, epoch
+                model, test_masked_loader, config, device, epoch, task_stats
             )
 
             if config.calculate_val_loss:
