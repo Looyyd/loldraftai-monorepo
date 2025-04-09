@@ -65,6 +65,7 @@ class MatchDataset(IterableDataset):
         train_or_test="train",
         dataset_fraction: float = 1.0,
         patch_augmentation_prob: float = 0.0,
+        reshuffle_fraction: bool = True,
     ):
         self.data_files = sorted(
             glob.glob(
@@ -76,8 +77,10 @@ class MatchDataset(IterableDataset):
         self.dataset_fraction = dataset_fraction
         self.train_or_test = train_or_test
         self.patch_augmentation_prob = patch_augmentation_prob
+        self.reshuffle_fraction = reshuffle_fraction
+        self.all_data_files = self.data_files.copy()
 
-        # Use specified fraction of the files
+        # Initial file selection
         if dataset_fraction < 1.0:
             num_files = max(1, int(len(self.data_files) * dataset_fraction))
             self.data_files = self.data_files[:num_files]
@@ -148,8 +151,17 @@ class MatchDataset(IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        files = self.data_files.copy()  # Create a copy to shuffle
-        random.shuffle(files)  # Shuffle at the start of each iteration
+
+        # If using fraction and reshuffle is enabled, select new subset of files
+        if self.dataset_fraction < 1.0 and self.reshuffle_fraction:
+            files = self.all_data_files.copy()
+            random.shuffle(files)
+            num_files = max(1, int(len(files) * self.dataset_fraction))
+            files = files[:num_files]
+        else:
+            files = self.data_files.copy()
+
+        random.shuffle(files)  # Shuffle the selected files
 
         if worker_info is None:
             iter_start, iter_end = 0, len(files)
