@@ -13,6 +13,7 @@ interface PredictionResult {
   win_probability: number;
   gold_diff_15min: number[];
   champion_impact: number[];
+  time_bucketed_predictions: Record<string, number>;
 }
 
 interface DraftAnalysisProps {

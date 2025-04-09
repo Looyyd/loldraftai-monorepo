@@ -6,6 +6,7 @@ interface DraftAnalysisShowcaseProps {
     win_probability: number;
     gold_diff_15min: number[];
     champion_impact: number[];
+    time_bucketed_predictions: Record<string, number>;
   };
   team1: Team;
   team2: Team;
