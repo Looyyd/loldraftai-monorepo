@@ -169,12 +169,33 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
         );
       }
 
+      console.log(
+        "Results:",
+        results.map((c) => ({ id: c.id, name: c.name }))
+      );
       setFilteredChampions(results);
     },
     [champions, isChampionPlayedInRole, isChampionFavorite]
   );
 
   useEffect(() => {
+    console.log(
+      "Champions:",
+      champions.map((c) => ({ id: c.id, name: c.name }))
+    );
+    console.log(
+      "Filtered Champions:",
+      filteredChampions.map((c) => ({ id: c.id, name: c.name }))
+    );
+  }, [champions, filteredChampions]);
+
+  useEffect(() => {
+    console.log("Filter triggered with:", {
+      searchTerm,
+      selectedRole,
+      showOnlyFavorites,
+      championsCount: champions.length,
+    });
     debouncedFilter(searchTerm, selectedRole, showOnlyFavorites);
   }, [searchTerm, selectedRole, showOnlyFavorites, debouncedFilter]);
 
@@ -277,17 +298,15 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
 
       <div className="h-[455px] overflow-y-auto p-1">
         <div className="grid grid-cols-[repeat(auto-fill,80px)] justify-center gap-2">
-          {champions.map((champion) => (
+          {filteredChampions.map((champion) => (
             <ContextMenu key={champion.id}>
-              <ContextMenuTrigger
-                className={`${
-                  filteredChampions.map((c) => c.id).includes(champion.id)
-                    ? "relative"
-                    : "absolute invisible pointer-events-none"
-                }`}
-              >
+              <ContextMenuTrigger>
                 <div
                   onClick={() => {
+                    console.log("Clicked champion:", {
+                      id: champion.id,
+                      name: champion.name,
+                    });
                     addChampion(champion);
                     setSearchTerm("");
                   }}

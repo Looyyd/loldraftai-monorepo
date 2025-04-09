@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import ChampionGrid from "./ChampionGrid";
 import TeamPanel from "./TeamPanel";
 import { HelpModal } from "./HelpModal";
@@ -36,7 +36,7 @@ import { usePersistedState } from "@draftking/ui/hooks/usePersistedState";
 import { ChangelogModal } from "./ChangelogModal";
 
 export default function Draft() {
-  const [remainingChampions, setRemainingChampions] =
+  const [remainingChampionsBase, setRemainingChampionsBase] =
     useState<Champion[]>(champions);
   const [teamOne, setTeamOne] = useState<Team>(emptyTeam);
   const [teamTwo, setTeamTwo] = useState<Team>(emptyTeam);
@@ -53,6 +53,11 @@ export default function Draft() {
       support: [],
     }
   );
+
+  // Memoize the champions passed to ChampionGrid
+  const remainingChampions = useMemo(() => {
+    return remainingChampionsBase; // Add filtering logic here if needed in the future
+  }, [remainingChampionsBase]);
 
   const [showHelpModal, setShowHelpModal] = useState(() => {
     // Check if running in browser environment and if we're on desktop
@@ -90,7 +95,7 @@ export default function Draft() {
   const closeChangelogModal = () => setShowChangelogModal(false);
 
   const resetDraft = () => {
-    setRemainingChampions(champions);
+    setRemainingChampionsBase(champions);
     setTeamOne(emptyTeam);
     setTeamTwo(emptyTeam);
     setSelectedSpot(null);
@@ -116,12 +121,12 @@ export default function Draft() {
       selectedSpot,
       teamOne,
       teamTwo,
-      remainingChampions,
+      remainingChampionsBase,
       currentPatch,
       selectedDraftOrder,
       setTeamOne,
       setTeamTwo,
-      setRemainingChampions,
+      setRemainingChampionsBase,
       setSelectedSpot,
       handleDeleteChampion
     );
@@ -133,10 +138,10 @@ export default function Draft() {
       team,
       teamOne,
       teamTwo,
-      remainingChampions,
+      remainingChampionsBase,
       setTeamOne,
       setTeamTwo,
-      setRemainingChampions
+      setRemainingChampionsBase
     );
   };
 
