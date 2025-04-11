@@ -27,7 +27,12 @@ export const DraftAnalysisShowcase = ({
   team2,
   ImageComponent,
 }: DraftAnalysisShowcaseProps) => {
-  const { win_probability, gold_diff_15min, champion_impact, time_bucketed_predictions } = prediction;
+  const {
+    win_probability,
+    gold_diff_15min,
+    champion_impact,
+    time_bucketed_predictions,
+  } = prediction;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -39,11 +44,6 @@ export const DraftAnalysisShowcase = ({
             <p>{`Red Side ${(100 - win_probability).toFixed(1)}%`}</p>
           </div>
           <WinrateBar team1Winrate={win_probability} />
-        </div>
-
-        {/* Winrate Over Time Chart */}
-        <div className="w-full">
-          <WinrateOverTimeChart timeBucketedPredictions={time_bucketed_predictions} />
         </div>
 
         <div className="w-full overflow-x-auto rounded-lg bg-white dark:bg-gray-900 shadow-sm">
@@ -194,6 +194,13 @@ export const DraftAnalysisShowcase = ({
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Winrate Over Time Chart */}
+        <div className="w-full">
+          <WinrateOverTimeChart
+            timeBucketedPredictions={time_bucketed_predictions}
+          />
         </div>
       </div>
     </TooltipProvider>
