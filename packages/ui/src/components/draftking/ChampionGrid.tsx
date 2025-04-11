@@ -263,7 +263,7 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
         </div>
       </div>
 
-      <div className="h-[455px] overflow-y-auto p-1">
+      <div className="h-[455px] overflow-y-auto p-1 [scrollbar-gutter:stable]">
         <div className="grid grid-cols-[repeat(auto-fill,80px)] justify-center gap-2">
           {filteredChampions.map((champion) => (
             <ContextMenu key={champion.id}>
