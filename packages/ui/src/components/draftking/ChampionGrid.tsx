@@ -265,9 +265,15 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
 
       <div className="h-[455px] overflow-y-auto p-1 [scrollbar-gutter:stable]">
         <div className="grid grid-cols-[repeat(auto-fill,80px)] justify-center gap-2">
-          {filteredChampions.map((champion) => (
+          {champions.map((champion) => (
             <ContextMenu key={champion.id}>
-              <ContextMenuTrigger>
+              <ContextMenuTrigger
+                className={`${
+                  filteredChampions.map((c) => c.id).includes(champion.id)
+                    ? "relative"
+                    : "absolute invisible pointer-events-none"
+                }`}
+              >
                 <div
                   onClick={() => {
                     addChampion(champion);
