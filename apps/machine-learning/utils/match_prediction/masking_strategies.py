@@ -20,11 +20,7 @@ class LinearDecayDistribution:
 class StrategicMaskingDistribution:
     """
     Probablilities are determined by my instinct, but seem abount right.
-    Strategic masking with specific scenarios:
-    - 40% chance to mask one full team (5 champions), to learn champion synergies
-    - 0.5% chance to mask everything (10 champions), to have a baseline model output
-    - 10% chance to mask nothing (0 champions), to learn complex champion interactions, with full visibility
-    - 49.5% chance to mask 1-9 champions with linear distribution, to learn partial drafts
+    Strategic masking with specific scenarios.
     """
 
     def __init__(self, decay_factor: float = 2.0):
@@ -34,14 +30,14 @@ class StrategicMaskingDistribution:
         self.probabilities = np.zeros(self.max_value + 1)
 
         # Set fixed scenario probabilities
-        self.probabilities[0] = 0.10  # No masking
-        self.probabilities[5] = 0.40  # One full team
-        self.probabilities[10] = 0.005  # Everything masked
+        self.probabilities[0] = 0.45  # No masking
+        self.probabilities[5] = 0.05  # One full team
+        self.probabilities[10] = 0.01  # Everything masked
 
         # Distribute remaining probability (0.495) across 1-4, 6-9 using linear distribution
-        remaining_indices = [i for i in range(1, 10) if i != 5]
+        remaining_indices = [i for i in range(1, 10)]
         linear_probs = np.ones(len(remaining_indices))  # Equal probabilities
-        linear_probs = linear_probs / linear_probs.sum() * 0.495
+        linear_probs = linear_probs / linear_probs.sum() * 0.49
 
         # Assign the linearly distributed probabilities
         for idx, prob in zip(remaining_indices, linear_probs):
