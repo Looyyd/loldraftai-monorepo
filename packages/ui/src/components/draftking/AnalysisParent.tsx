@@ -20,6 +20,7 @@ import type {
   FavoriteChampions,
   SelectedSpot,
   Elo,
+  SuggestionMode,
 } from "@draftking/ui/lib/types";
 import { elos } from "@draftking/ui/lib/types";
 import { championIndexToFavoritesPosition } from "@draftking/ui/lib/types";
@@ -27,8 +28,6 @@ import { SparklesIcon, LightBulbIcon } from "@heroicons/react/24/solid";
 import { LowPickrateWarning } from "./LowPickrateWarning";
 import { HelpCircle } from "lucide-react";
 import { usePersistedState } from "../../hooks/usePersistedState";
-
-type SuggestionMode = "favorites" | "meta" | "all";
 
 interface AnalysisParentProps {
   team1: Team;

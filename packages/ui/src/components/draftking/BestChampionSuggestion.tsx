@@ -7,6 +7,7 @@ import type {
   FavoriteChampions,
   Elo,
   ImageComponent,
+  SuggestionMode,
 } from "@draftking/ui/lib/types";
 import { champions } from "@draftking/ui/lib/champions";
 import { championIndexToFavoritesPosition } from "@draftking/ui/lib/types";
@@ -35,8 +36,6 @@ interface BestChampionSuggestionProps {
   ImageComponent: ImageComponent;
   suggestionMode: SuggestionMode;
 }
-
-type SuggestionMode = "favorites" | "meta" | "all";
 
 const PICKRATE_THRESHOLD = 0.3;
 const META_THRESHOLD = 0.5;

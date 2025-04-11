@@ -8,7 +8,7 @@ import type {
 } from "@draftking/ui/lib/types";
 import { VERCEL_URL } from "../utils";
 import { PlainImage } from "./PlainImage";
-
+import { SuggestionMode } from "@draftking/ui/lib/types";
 interface BestChampionSuggestionProps {
   team1: Team;
   team2: Team;
@@ -17,7 +17,7 @@ interface BestChampionSuggestionProps {
   remainingChampions: Champion[];
   elo: Elo;
   patch: string;
-  suggestionMode: "favorites" | "meta" | "all";
+  suggestionMode: SuggestionMode;
 }
 
 export const BestChampionSuggestion = (props: BestChampionSuggestionProps) => {
