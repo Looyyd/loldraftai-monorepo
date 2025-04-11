@@ -188,6 +188,9 @@ class InDepthPrediction(BaseModel):
     win_probability: float
     gold_diff_15min: List[float]  # [TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY]
     champion_impact: List[float]  # [champ1_impact, champ2_impact, ..., champ10_impact]
+    time_bucketed_predictions: Dict[
+        str, float
+    ]  # Win probabilities for different time buckets
 
 
 class ModelMetadata(BaseModel):
@@ -256,24 +259,19 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
         "win_prediction_40_inf",
     ]
 
-    print("\n===== TIME-BUCKETED WIN PREDICTIONS =====")
-    print(f"Overall win probability: {base_win_prob:.2%}")
-
+    # Create time-bucketed predictions dictionary
+    time_bucketed_predictions = {}
     for task in time_bucket_tasks:
         if task in base_outputs:
             bucket_pred = base_outputs[task]
             bucket_prob = float(torch.sigmoid(bucket_pred).cpu().numpy()[0])
-            bucket_name = task.replace("win_prediction_", "")
-            print(f"{bucket_name} min: {bucket_prob:.2%}")
-
-    print("=========================================\n")
+            time_bucketed_predictions[task] = bucket_prob
 
     # Calculate gold differences
     gold_diffs = calculate_gold_differences(base_outputs)
 
     # Champion impact analysis
     champion_impact = [0.0] * 10
-    unknown_champion_id = champion_id_encoder.transform(["UNKNOWN"])[0]
 
     # Find which champions are known and can be masked
     champion_ids = api_input.champion_ids
@@ -316,6 +314,7 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
         win_probability=base_win_prob,
         gold_diff_15min=gold_diffs,
         champion_impact=champion_impact,
+        time_bucketed_predictions=time_bucketed_predictions,
     )
 
 
