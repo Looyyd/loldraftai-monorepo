@@ -33,22 +33,14 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
   timeBucketedPredictions,
 }) => {
   // Extract time labels and values from the predictions
-  const timeLabels = [
-    "20 min",
-    "25 min",
-    "30 min",
-    "35 min",
-    "40 min",
-    "40+ min",
-  ];
+  const timeLabels = ["20 min", "25 min", "30 min", "35 min", "35+ min"];
 
   const timeIntervals = [
     "0-20 min",
     "20-25 min",
     "25-30 min",
     "30-35 min",
-    "35-40 min",
-    "40+ min",
+    "35+ min",
   ];
 
   // Convert predictions to percentages and ensure they're in the correct order
@@ -57,8 +49,7 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
     (timeBucketedPredictions["win_prediction_20_25"] as number) * 100,
     (timeBucketedPredictions["win_prediction_25_30"] as number) * 100,
     (timeBucketedPredictions["win_prediction_30_35"] as number) * 100,
-    (timeBucketedPredictions["win_prediction_35_40"] as number) * 100,
-    (timeBucketedPredictions["win_prediction_40_inf"] as number) * 100, // Repeat the last value for the "40+ min" label
+    (timeBucketedPredictions["win_prediction_35_inf"] as number) * 100,
   ];
 
   // Create datasets for the chart

@@ -255,8 +255,7 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
         "win_prediction_20_25",
         "win_prediction_25_30",
         "win_prediction_30_35",
-        "win_prediction_35_40",
-        "win_prediction_40_inf",
+        "win_prediction_35_inf",
     ]
 
     # Create time-bucketed predictions dictionary

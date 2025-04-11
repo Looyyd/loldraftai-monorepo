@@ -49,8 +49,7 @@ TIME_BUCKETS = [
     "win_prediction_20_25",
     "win_prediction_25_30",
     "win_prediction_30_35",
-    "win_prediction_35_40",
-    "win_prediction_40_inf",
+    "win_prediction_35_inf",
 ]
 
 

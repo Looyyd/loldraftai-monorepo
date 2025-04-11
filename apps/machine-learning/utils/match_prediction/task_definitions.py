@@ -140,13 +140,8 @@ TASKS = {
         task_type=TaskType.BINARY_CLASSIFICATION,
         weight=0.1,
     ),
-    "win_prediction_35_40": TaskDefinition(
-        name="win_prediction_35_40",
-        task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.1,
-    ),
-    "win_prediction_40_inf": TaskDefinition(
-        name="win_prediction_40_inf",
+    "win_prediction_35_inf": TaskDefinition(
+        name="win_prediction_35_inf",
         task_type=TaskType.BINARY_CLASSIFICATION,
         weight=0.1,
     ),

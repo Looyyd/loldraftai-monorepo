@@ -388,9 +388,7 @@ def validate(
                     & (game_duration_seconds < 30 * 60),
                     "30_35": (game_duration_seconds >= 30 * 60)
                     & (game_duration_seconds < 35 * 60),
-                    "35_40": (game_duration_seconds >= 35 * 60)
-                    & (game_duration_seconds < 40 * 60),
-                    "40_inf": game_duration_seconds >= 40 * 60,
+                    "35_inf": (game_duration_seconds >= 35 * 60),
                 }
 
                 if config.calculate_val_loss:
@@ -455,6 +453,7 @@ def validate(
                     losses = torch.stack([loss.mean() for loss in task_losses.values()])
                     total_loss += (losses * task_weights).sum()
 
+                    # TODO: fix calculation dev/filip/winchance-over-time broke it!
                     # Calculate win prediction accuracy
                     if "win_prediction" in enabled_tasks:
                         # Apply sigmoid to get probabilities
