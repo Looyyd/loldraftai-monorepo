@@ -6,14 +6,13 @@ import {
   TooltipProvider,
 } from "../ui/tooltip";
 import { WinrateBar } from "./WinrateBar";
-import type { ImageComponent } from "@draftking/ui/lib/types";
+import type {
+  ImageComponent,
+  DetailedPrediction,
+} from "@draftking/ui/lib/types";
 
 interface DraftAnalysisShowcaseProps {
-  prediction: {
-    win_probability: number;
-    gold_diff_15min: number[];
-    champion_impact: number[];
-  };
+  prediction: DetailedPrediction;
   team1: Team;
   team2: Team;
   ImageComponent: ImageComponent; // Add ImageComponent prop

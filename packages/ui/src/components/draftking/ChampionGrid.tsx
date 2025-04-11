@@ -21,7 +21,7 @@ import {
   type PlayRates,
 } from "@draftking/ui/lib/champions";
 
-// Types that should be moved to a shared types package
+// TODO: Types that should be moved to a shared types package
 export interface Champion {
   id: number;
   name: string;
