@@ -125,9 +125,7 @@ def train_epoch(
             & (game_duration_seconds < 30 * 60),
             "30_35": (game_duration_seconds >= 30 * 60)
             & (game_duration_seconds < 35 * 60),
-            "35_40": (game_duration_seconds >= 35 * 60)
-            & (game_duration_seconds < 40 * 60),
-            "40_inf": game_duration_seconds >= 40 * 60,
+            "35_inf": (game_duration_seconds >= 35 * 60),
         }
 
         optimizer.zero_grad(set_to_none=True)
