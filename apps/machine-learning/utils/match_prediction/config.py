@@ -8,7 +8,7 @@ class TrainingConfig:
     def __init__(self):
         # Default values
         self.num_epochs = 40
-        self.annealing_epoch = 30
+        self.annealing_epoch = 40
         self.hidden_dims = [1024, 512, 256, 128, 64]
         self.dropout = 0.5
         self.learning_rate = 5e-4
