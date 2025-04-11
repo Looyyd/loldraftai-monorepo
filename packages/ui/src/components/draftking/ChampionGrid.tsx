@@ -169,33 +169,12 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
         );
       }
 
-      console.log(
-        "Results:",
-        results.map((c) => ({ id: c.id, name: c.name }))
-      );
       setFilteredChampions(results);
     },
     [champions, isChampionPlayedInRole, isChampionFavorite]
   );
 
   useEffect(() => {
-    console.log(
-      "Champions:",
-      champions.map((c) => ({ id: c.id, name: c.name }))
-    );
-    console.log(
-      "Filtered Champions:",
-      filteredChampions.map((c) => ({ id: c.id, name: c.name }))
-    );
-  }, [champions, filteredChampions]);
-
-  useEffect(() => {
-    console.log("Filter triggered with:", {
-      searchTerm,
-      selectedRole,
-      showOnlyFavorites,
-      championsCount: champions.length,
-    });
     debouncedFilter(searchTerm, selectedRole, showOnlyFavorites);
   }, [searchTerm, selectedRole, showOnlyFavorites, debouncedFilter]);
 
@@ -303,10 +282,6 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
               <ContextMenuTrigger>
                 <div
                   onClick={() => {
-                    console.log("Clicked champion:", {
-                      id: champion.id,
-                      name: champion.name,
-                    });
                     addChampion(champion);
                     setSearchTerm("");
                   }}
