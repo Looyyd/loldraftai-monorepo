@@ -15,7 +15,7 @@ interface DraftAnalysisShowcaseProps {
   prediction: DetailedPrediction;
   team1: Team;
   team2: Team;
-  ImageComponent: ImageComponent; // Add ImageComponent prop
+  ImageComponent: ImageComponent;
 }
 
 export const DraftAnalysisShowcase = ({
