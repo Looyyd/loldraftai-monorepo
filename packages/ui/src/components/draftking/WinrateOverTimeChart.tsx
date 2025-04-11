@@ -57,36 +57,35 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
       {
         label: "Blue Team Winrate",
         data: winrateValues,
-        borderColor: "rgb(59, 130, 246)", // Blue color
-        backgroundColor: "rgba(59, 130, 246, 0.1)", // Light blue for fill
-        tension: 0.4, // Slightly curved lines
-        fill: true, // Fill area under the line
+        borderColor: "hsl(217, 91%, 60%)", // Using your primary color
+        backgroundColor: "hsla(217, 91%, 60%, 0.1)", // Semi-transparent primary
+        tension: 0.4,
+        fill: false,
         pointRadius: 4,
         pointHoverRadius: 6,
       },
       {
         label: "Red Team Winrate",
         data: winrateValues.map((value) => 100 - value),
-        borderColor: "rgb(239, 68, 68)", // Red color
-        backgroundColor: "rgba(239, 68, 68, 0.1)", // Light red for fill
-        tension: 0.4, // Slightly curved lines
-        fill: true, // Fill area under the line
+        borderColor: "hsl(0, 63%, 31%)", // Using your destructive color
+        backgroundColor: "hsla(0, 63%, 31%, 0.1)", // Semi-transparent destructive
+        tension: 0.4,
+        fill: false,
         pointRadius: 4,
         pointHoverRadius: 6,
       },
       {
         label: "50% Line",
         data: Array(timeLabels.length).fill(50),
-        borderColor: "rgba(156, 163, 175, 0.5)", // Gray color
+        borderColor: "hsla(0, 0%, 100%, 0.8)", // Using white with higher opacity
         borderWidth: 1,
-        borderDash: [5, 5], // Dashed line
-        pointRadius: 0, // No points
-        fill: false, // No fill
-        showLine: true, // Show the line
-        hidden: false, // Don't hide the line
-        skipNull: true, // Skip null values
-        spanGaps: true, // Connect across gaps
-        // Hide this dataset from tooltips
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false,
+        showLine: true,
+        hidden: false,
+        skipNull: true,
+        spanGaps: true,
         tooltip: {
           enabled: false,
         },
@@ -100,7 +99,7 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: false, // Hide legend
+        display: false,
       },
       tooltip: {
         filter: function (tooltipItem) {
@@ -134,14 +133,18 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
           callback: function (value) {
             return value + "%";
           },
+          color: "hsl(213, 31%, 91%)", // Using your foreground color
         },
         grid: {
-          color: "rgba(156, 163, 175, 0.1)", // Light gray grid lines
+          color: "hsla(216, 34%, 17%, 0.4)", // Using your border color with lower opacity
         },
       },
       x: {
         grid: {
-          display: false, // Hide vertical grid lines
+          display: false,
+        },
+        ticks: {
+          color: "hsl(213, 31%, 91%)", // Using your foreground color
         },
       },
     },
@@ -152,8 +155,8 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
   };
 
   return (
-    <div className="w-full h-64 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-      <h3 className="text-center text-lg font-medium mb-2">
+    <div className="w-full h-64 p-4 bg-card rounded-lg shadow-sm">
+      <h3 className="text-center text-lg font-medium mb-2 text-card-foreground">
         Predicted Winrate Over Time
       </h3>
       <div className="h-48">
