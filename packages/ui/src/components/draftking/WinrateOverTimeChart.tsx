@@ -12,6 +12,13 @@ import {
   ChartOptions,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
+import { HelpCircle } from "lucide-react";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "../ui/tooltip";
 
 // Register ChartJS components
 ChartJS.register(
@@ -156,9 +163,33 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
 
   return (
     <div className="w-full h-64 p-4 bg-card rounded-lg shadow-sm">
-      <h3 className="text-center text-lg font-medium mb-2 text-card-foreground">
-        Predicted Winrate Over Time
-      </h3>
+      <div className="flex items-center justify-center gap-2 mb-2">
+        <h3 className="text-lg font-medium text-card-foreground">
+          Predicted Winrate Over Time
+        </h3>
+        <TooltipProvider delayDuration={0}>
+          <UITooltip>
+            <TooltipTrigger>
+              <HelpCircle className="h-5 w-5 text-gray-500" />
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[350px] whitespace-normal">
+              <p className="mb-2">
+                This chart shows how likely each team is to win at different
+                stages of the game, based on their draft composition.
+              </p>
+              <p className="mb-2">
+                <strong>How to read:</strong> If the game ends between 25 and 30
+                min(surrender included), the model expects that the blue team
+                has a winrate of {`${winrateValues[2]?.toFixed(1)}%`}.
+              </p>
+              <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
+                Pro tip: Use these predictions to understand your team's power
+                spikes!
+              </p>
+            </TooltipContent>
+          </UITooltip>
+        </TooltipProvider>
+      </div>
       <div className="h-48">
         <Line data={data} options={options} />
       </div>
