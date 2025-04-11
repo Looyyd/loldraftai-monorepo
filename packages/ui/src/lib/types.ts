@@ -44,10 +44,10 @@ export type FavoriteChampions = {
   support: number[];
 };
 
-export interface SelectedSpot {
+export type SelectedSpot = {
   teamIndex: TeamIndex;
   championIndex: ChampionIndex;
-}
+};
 
 export const elos = ["emerald", "diamond", "master +"] as const;
 export type Elo = (typeof elos)[number];

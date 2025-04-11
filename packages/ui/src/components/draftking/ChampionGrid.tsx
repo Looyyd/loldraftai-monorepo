@@ -14,28 +14,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../ui/tooltip";
-import type { ImageComponent } from "@draftking/ui/lib/types";
+import type {
+  ImageComponent,
+  Champion,
+  FavoriteChampions,
+} from "@draftking/ui/lib/types";
 import {
   getChampionPlayRates,
   sortedPatches,
   type PlayRates,
 } from "@draftking/ui/lib/champions";
-
-// TODO: Types that should be moved to a shared types package
-export interface Champion {
-  id: number;
-  name: string;
-  icon: string;
-  searchName: string;
-}
-
-export type FavoriteChampions = {
-  top: number[];
-  jungle: number[];
-  mid: number[];
-  bot: number[];
-  support: number[];
-};
 
 interface ChampionGridProps {
   champions: Champion[];

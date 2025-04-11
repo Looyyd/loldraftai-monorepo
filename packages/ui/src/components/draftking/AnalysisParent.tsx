@@ -29,6 +29,7 @@ import { LowPickrateWarning } from "./LowPickrateWarning";
 import { HelpCircle } from "lucide-react";
 import { usePersistedState } from "../../hooks/usePersistedState";
 
+// TODO: this is too much, need to simplify the types at least!
 interface AnalysisParentProps {
   team1: Team;
   team2: Team;
