@@ -1,4 +1,9 @@
-import type { Team, Elo, ChampionIndex } from "@draftking/ui/lib/types";
+import type {
+  Team,
+  Elo,
+  ChampionIndex,
+  DetailedPrediction,
+} from "@draftking/ui/lib/types";
 import { eloToNumerical } from "@draftking/ui/lib/draftLogic";
 
 export const formatTeamData = (team: Team) => {
@@ -58,12 +63,6 @@ export const predictGame = async (
     throw error;
   }
 };
-
-interface DetailedPrediction {
-  win_probability: number;
-  gold_diff_15min: number[];
-  champion_impact: number[];
-}
 
 export const predictGameInDepth = async (
   team1: Team,

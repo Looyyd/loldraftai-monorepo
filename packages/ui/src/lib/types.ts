@@ -54,3 +54,8 @@ export type Elo = (typeof elos)[number];
 export const eloToNumerical = (elo: Elo) => elos.indexOf(elo);
 
 export type SuggestionMode = "favorites" | "meta" | "all";
+export interface DetailedPrediction {
+  win_probability: number;
+  gold_diff_15min: number[];
+  champion_impact: number[];
+}
