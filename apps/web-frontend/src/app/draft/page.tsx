@@ -55,6 +55,7 @@ export default function Draft() {
   );
 
   // Memoize the champions passed to ChampionGrid
+  // This is just to have similar logic between desktop and web version(in desktop, bans are applied here)
   const remainingChampions = useMemo(() => {
     return remainingChampionsBase; // Add filtering logic here if needed in the future
   }, [remainingChampionsBase]);
@@ -95,10 +96,10 @@ export default function Draft() {
   const closeChangelogModal = () => setShowChangelogModal(false);
 
   const resetDraft = () => {
-    setRemainingChampionsBase(champions);
     setTeamOne(emptyTeam);
     setTeamTwo(emptyTeam);
     setSelectedSpot(null);
+    setRemainingChampionsBase(champions);
     setResetAnalysisTrigger((prev) => prev + 1);
   };
 

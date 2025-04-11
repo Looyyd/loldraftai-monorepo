@@ -1,10 +1,7 @@
 "use client";
 import React from "react";
 import { ChampionGrid as SharedChampionGrid } from "@draftking/ui/components/draftking/ChampionGrid";
-import type {
-  Champion,
-  FavoriteChampions,
-} from "@draftking/ui/components/draftking/ChampionGrid";
+import type { Champion, FavoriteChampions } from "@draftking/ui/lib/types";
 import { ImageComponent } from "@draftking/ui/lib/types";
 import CloudFlareImage from "@/components/CloudFlareImage";
 
