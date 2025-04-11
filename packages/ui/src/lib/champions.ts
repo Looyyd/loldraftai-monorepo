@@ -226,14 +226,7 @@ export interface ChampionPlayRates {
 const playRatesData = championPlayRates as ChampionPlayRates;
 
 // Get sorted patches for easy access to latest data
-// TODO: this can be just alpha sorter now that we zfill the minor version
-export const sortedPatches = Object.keys(playRatesData).sort((a, b) => {
-  const [aMajor, aMinor] = a.split(".").map(Number);
-  const [bMajor, bMinor] = b.split(".").map(Number);
-  return bMajor === aMajor
-    ? (bMinor ?? 0) - (aMinor ?? 0)
-    : (bMajor ?? 0) - (aMajor ?? 0);
-});
+export const sortedPatches = Object.keys(playRatesData).sort();
 
 // Helper function to get champion play rates for a specific patch
 export function getChampionPlayRates(
