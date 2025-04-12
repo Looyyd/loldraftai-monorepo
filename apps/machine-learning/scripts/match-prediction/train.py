@@ -372,6 +372,7 @@ def validate(
                 outputs = model(features)
 
                 # Denormalize game duration for this batch
+                # TODO: add original value as column, to now have to denormalize it
                 game_duration_seconds = (
                     labels["gameDuration"] * game_duration_std + game_duration_mean
                 )
