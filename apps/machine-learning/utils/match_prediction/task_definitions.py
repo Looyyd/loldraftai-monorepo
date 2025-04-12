@@ -147,6 +147,10 @@ for stat in INDIVIDUAL_STATS:
     for position in POSITIONS:
         for team_id in TEAMS:
             for timestamp in TIMESTAMPS:
+                # Skip totalGold at 900000 as we'll handle it separately
+                if stat == "totalGold" and timestamp == "900000":
+                    continue
+
                 task_name = f"team_{team_id}_{position}_{stat}_at_{timestamp}"
                 TASKS[task_name] = TaskDefinition(
                     name=task_name,
@@ -159,6 +163,17 @@ for stat in INDIVIDUAL_STATS:
                         * len(TIMESTAMPS)
                     ),
                 )
+
+# Add total gold at 15 separately with its specific weight
+for position in POSITIONS:
+    for team_id in TEAMS:
+        task_name = f"team_{team_id}_{position}_totalGold_at_900000"
+        TASKS[task_name] = TaskDefinition(
+            name=task_name,
+            task_type=TaskType.REGRESSION,
+            weight=0.01
+            / (len(POSITIONS) * len(TEAMS)),  # Same weight as in final_tasks
+        )
 
 # For damage stats
 for damage_type in DAMAGE_STATS:
