@@ -45,8 +45,7 @@ POSITIONS = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 
 # Time buckets for win predictions
 TIME_BUCKETS = [
-    "win_prediction_0_20",
-    "win_prediction_20_25",
+    "win_prediction_0_25",
     "win_prediction_25_30",
     "win_prediction_30_35",
     "win_prediction_35_inf",

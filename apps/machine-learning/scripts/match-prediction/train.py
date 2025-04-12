@@ -118,9 +118,7 @@ def train_epoch(
         )
         # Create masks for duration buckets (in minutes)
         masks = {
-            "0_20": game_duration_seconds < 20 * 60,
-            "20_25": (game_duration_seconds >= 20 * 60)
-            & (game_duration_seconds < 25 * 60),
+            "0_25": game_duration_seconds < 25 * 60,
             "25_30": (game_duration_seconds >= 25 * 60)
             & (game_duration_seconds < 30 * 60),
             "30_35": (game_duration_seconds >= 30 * 60)
@@ -379,9 +377,7 @@ def validate(
                 )
                 # Create masks for duration buckets (in minutes)
                 masks = {
-                    "0_20": game_duration_seconds < 20 * 60,
-                    "20_25": (game_duration_seconds >= 20 * 60)
-                    & (game_duration_seconds < 25 * 60),
+                    "0_25": game_duration_seconds < 25 * 60,
                     "25_30": (game_duration_seconds >= 25 * 60)
                     & (game_duration_seconds < 30 * 60),
                     "30_35": (game_duration_seconds >= 30 * 60)

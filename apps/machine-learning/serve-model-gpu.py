@@ -251,8 +251,7 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
 
     # Debug logs for time-bucketed win predictions
     time_bucket_tasks = [
-        "win_prediction_0_20",
-        "win_prediction_20_25",
+        "win_prediction_0_25",
         "win_prediction_25_30",
         "win_prediction_30_35",
         "win_prediction_35_inf",
