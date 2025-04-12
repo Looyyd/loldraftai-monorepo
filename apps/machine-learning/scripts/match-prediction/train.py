@@ -456,24 +456,9 @@ def validate(
                         predictions = (win_probs > 0.5).float()
                         # Count correct predictions
                         correct = (predictions == target_label).sum()
-                        # Accumulate based on mask for bucketed tasks
-                        if (
-                            task_name.startswith("win_prediction_")
-                            and task_name != "win_prediction"
-                        ):
-                            bucket_key = task_name.split("win_prediction_")[1]
-                            mask = masks[bucket_key]
-                            if mask.any():
-                                correct_masked = (
-                                    predictions[mask] == target_label[mask]
-                                ).sum()
-                                # Store accuracy for this bucket separately if needed
-                                # For now, just add to the main accuracy accumulator
-                                win_prediction_accuracy[0] += correct_masked
-                                win_prediction_accuracy[1] += mask.sum()
-                        else:  # For the main win_prediction task
-                            win_prediction_accuracy[0] += correct
-                            win_prediction_accuracy[1] += batch_size
+
+                        win_prediction_accuracy[0] += correct
+                        win_prediction_accuracy[1] += batch_size
 
                     # Track subset losses if needed
                     if config.track_subset_val_losses:
