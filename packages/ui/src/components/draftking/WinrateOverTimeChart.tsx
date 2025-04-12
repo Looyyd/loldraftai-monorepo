@@ -134,16 +134,21 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
     },
     scales: {
       y: {
-        min: 0,
-        max: 100,
+        // Find min and max values from both blue and red team winrates
+        min: Math.floor(
+          Math.min(...winrateValues, ...winrateValues.map((v) => 100 - v)) - 5
+        ),
+        max: Math.ceil(
+          Math.max(...winrateValues, ...winrateValues.map((v) => 100 - v)) + 5
+        ),
         ticks: {
           callback: function (value) {
             return value + "%";
           },
-          color: "hsl(213, 31%, 91%)", // Using your foreground color
+          color: "hsl(213, 31%, 91%)",
         },
         grid: {
-          color: "hsla(216, 34%, 17%, 0.4)", // Using your border color with lower opacity
+          color: "hsla(216, 34%, 17%, 0.4)",
         },
       },
       x: {
@@ -174,13 +179,21 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
             </TooltipTrigger>
             <TooltipContent className="max-w-[350px] whitespace-normal">
               <p className="mb-2">
-                This chart shows how likely each team is to win at different
-                stages of the game, based on their draft composition.
+                This chart shows how likely each team is to win IF the game ends
+                during each time period. Each prediction is specific to that
+                time window.
               </p>
               <p className="mb-2">
-                <strong>How to read:</strong> If the game ends between 25 and 30
-                min(surrender included), the model expects that the blue team
-                has a winrate of {`${winrateValues[2]?.toFixed(1)}%`}.
+                <strong>Important note:</strong> These percentages are "what-if"
+                scenarios - they show the winrate assuming the game ends in that
+                time period(surrender included). Since games are more likely to
+                end at certain times than others, you can't average these
+                numbers to get the overall winrate.
+              </p>
+              <p className="mb-2">
+                For example: If you see a 60% winrate before 20 minutes, that
+                means the team would win 60% of games that end that early - but
+                very few games actually end this quickly!
               </p>
               <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
                 Pro tip: Use these predictions to understand your team's power
