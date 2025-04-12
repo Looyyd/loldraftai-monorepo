@@ -30,14 +30,13 @@ class StrategicMaskingDistribution:
         self.probabilities = np.zeros(self.max_value + 1)
 
         # Set fixed scenario probabilities
-        self.probabilities[0] = 0.45  # No masking
-        self.probabilities[5] = 0.05  # One full team
+        self.probabilities[0] = 0.40  # No masking
         self.probabilities[10] = 0.01  # Everything masked
 
-        # Distribute remaining probability (0.495) across 1-4, 6-9 using linear distribution
+        # Distribute remaining probability across 1-4, 6-9 using linear distribution
         remaining_indices = [i for i in range(1, 10)]
         linear_probs = np.ones(len(remaining_indices))  # Equal probabilities
-        linear_probs = linear_probs / linear_probs.sum() * 0.49
+        linear_probs = linear_probs / linear_probs.sum() * 0.59
 
         # Assign the linearly distributed probabilities
         for idx, prob in zip(remaining_indices, linear_probs):
@@ -47,6 +46,7 @@ class StrategicMaskingDistribution:
         self.probabilities = self.probabilities / self.probabilities.sum()
 
     def __call__(self) -> int:
+        # TODO: should maybe return indices, to allow masking of 1 full team, instead of random 5 champions
         return np.random.choice(self.max_value + 1, p=self.probabilities)
 
     def get_distribution(self) -> np.ndarray:
