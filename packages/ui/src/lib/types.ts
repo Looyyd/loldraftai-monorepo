@@ -51,7 +51,6 @@ export type SelectedSpot = {
 
 export const elos = ["emerald", "diamond", "master +"] as const;
 export type Elo = (typeof elos)[number];
-export const eloToNumerical = (elo: Elo) => elos.indexOf(elo);
 
 export type SuggestionMode = "favorites" | "meta" | "all";
 export interface DetailedPrediction {
