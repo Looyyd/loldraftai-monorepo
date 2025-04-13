@@ -51,7 +51,7 @@ class ColumnDefinition:
             )
 
 
-possible_values_elo = [0, 1, 2, 3, 4]
+possible_values_elo = [0, 1, 2, 3, 4, 5, 6]
 
 
 @validate_categorical_output(possible_values_elo)
@@ -82,6 +82,10 @@ def get_categorical_elo(df: pd.DataFrame) -> pd.Series:
             return 3
         elif (tier, division) == ("PLATINUM", "I"):
             return 4
+        elif (tier, division) == ("GOLD", "I"):
+            return 5
+        elif (tier, division) == ("SILVER", "I"):
+            return 6
         else:
             raise ValueError(f"Unknown elo: {tier} {division}")
 
