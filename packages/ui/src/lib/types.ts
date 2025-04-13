@@ -58,4 +58,6 @@ export interface DetailedPrediction {
   win_probability: number;
   gold_diff_15min: number[];
   champion_impact: number[];
+  time_bucketed_predictions: Record<string, number>;
+  raw_time_bucketed_predictions: Record<string, number>;
 }

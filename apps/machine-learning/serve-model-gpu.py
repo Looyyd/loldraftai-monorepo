@@ -188,9 +188,8 @@ class InDepthPrediction(BaseModel):
     win_probability: float
     gold_diff_15min: List[float]  # [TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY]
     champion_impact: List[float]  # [champ1_impact, champ2_impact, ..., champ10_impact]
-    time_bucketed_predictions: Dict[
-        str, float
-    ]  # Win probabilities for different time buckets
+    time_bucketed_predictions: Dict[str, float]  # Side normalized predictions
+    raw_time_bucketed_predictions: Dict[str, float]  # Non-normalized predictions
 
 
 class ModelMetadata(BaseModel):
@@ -259,6 +258,7 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
 
     # Create reversed champion order input to get opposite team perspective
     reversed_champion_ids = api_input.champion_ids[5:] + api_input.champion_ids[:5]
+    # TODO: could include this in a batch for performance
     reversed_input = APIInput(
         champion_ids=reversed_champion_ids,
         numerical_elo=api_input.numerical_elo,
@@ -274,6 +274,14 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
                 reversed_outputs = model(reversed_model_inputs)
         else:
             reversed_outputs = model(reversed_model_inputs)
+
+    # Store the raw (non-normalized) predictions first
+    raw_time_bucketed_predictions = {}
+    for task in time_bucket_tasks:
+        if task in base_outputs:
+            blue_pred = base_outputs[task]
+            blue_prob = float(torch.sigmoid(blue_pred).cpu().numpy()[0])
+            raw_time_bucketed_predictions[task] = blue_prob
 
     # Create balanced time-bucketed predictions dictionary by averaging both perspectives
     time_bucketed_predictions = {}
@@ -339,6 +347,7 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
         gold_diff_15min=gold_diffs,
         champion_impact=champion_impact,
         time_bucketed_predictions=time_bucketed_predictions,
+        raw_time_bucketed_predictions=raw_time_bucketed_predictions,
     )
 
 

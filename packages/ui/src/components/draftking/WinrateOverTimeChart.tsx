@@ -34,20 +34,28 @@ ChartJS.register(
 
 interface WinrateOverTimeChartProps {
   timeBucketedPredictions: Record<string, number>;
+  rawTimeBucketedPredictions: Record<string, number>;
 }
 
 export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
   timeBucketedPredictions,
+  rawTimeBucketedPredictions,
 }) => {
+  const [isNormalized, setIsNormalized] = React.useState(true);
   const timeIntervals = ["0-25 min", "25-30 min", "30-35 min", "35+ min"];
   const timeLabels = timeIntervals;
 
+  // Use normalized or raw predictions based on toggle
+  const predictions = isNormalized
+    ? timeBucketedPredictions
+    : rawTimeBucketedPredictions;
+
   // Convert predictions to percentages and ensure they're in the correct order
   const winrateValues = [
-    (timeBucketedPredictions["win_prediction_0_25"] as number) * 100,
-    (timeBucketedPredictions["win_prediction_25_30"] as number) * 100,
-    (timeBucketedPredictions["win_prediction_30_35"] as number) * 100,
-    (timeBucketedPredictions["win_prediction_35_inf"] as number) * 100,
+    (predictions["win_prediction_0_25"] as number) * 100,
+    (predictions["win_prediction_25_30"] as number) * 100,
+    (predictions["win_prediction_30_35"] as number) * 100,
+    (predictions["win_prediction_35_inf"] as number) * 100,
   ];
 
   // Create datasets for the chart
@@ -161,40 +169,95 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
 
   return (
     <div className="w-full h-64 p-4 bg-card rounded-lg shadow-sm">
-      <div className="flex items-center justify-center gap-2 mb-2">
-        <h3 className="text-lg font-medium text-card-foreground">
-          Predicted Winrate Over Time
-        </h3>
-        <TooltipProvider delayDuration={0}>
-          <UITooltip>
-            <TooltipTrigger>
-              <HelpCircle className="h-5 w-5 text-gray-500" />
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[350px] whitespace-normal">
-              <p className="mb-2">
-                This chart shows how likely each team is to win IF the game ends
-                during each time period. Each prediction is specific to that
-                time window.
-              </p>
-              <p className="mb-2">
-                <strong>Important note:</strong> These percentages are "what-if"
-                scenarios - they show the winrate assuming the game ends in that
-                time period(surrender included). Since games are more likely to
-                end at certain times than others, you can't average these
-                numbers to get the overall winrate.
-              </p>
-              <p className="mb-2">
-                For example: If you see a 60% winrate before 25 minutes, that
-                means the team would win 60% of games that end that early - but
-                very few games actually end this quickly!
-              </p>
-              <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
-                Pro tip: Use these predictions to understand your team's power
-                spikes!
-              </p>
-            </TooltipContent>
-          </UITooltip>
-        </TooltipProvider>
+      <div className="flex-col space-y-2 mb-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-medium text-card-foreground">
+            Predicted Winrate Over Time
+          </h3>
+          <TooltipProvider delayDuration={0}>
+            <UITooltip>
+              <TooltipTrigger>
+                <HelpCircle className="h-5 w-5 text-gray-500" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[350px] whitespace-normal">
+                <p className="mb-2">
+                  This chart shows how likely each team is to win IF the game
+                  ends during each time period. Each prediction is specific to
+                  that time window.
+                </p>
+                <p className="mb-2">
+                  <strong>Important note:</strong> These percentages are
+                  "what-if" scenarios - they show the winrate assuming the game
+                  ends in that time period(surrender included). Since games are
+                  more likely to end at certain times than others, you can't
+                  average these numbers to get the overall winrate.
+                </p>
+                <p className="mb-2">
+                  For example: If you see a 60% winrate before 25 minutes, that
+                  means the team would win 60% of games that end that early -
+                  but very few games actually end this quickly!
+                </p>
+                <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
+                  Pro tip: Use these predictions to understand your team's power
+                  spikes!
+                </p>
+              </TooltipContent>
+            </UITooltip>
+          </TooltipProvider>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={isNormalized}
+              onChange={(e) => setIsNormalized(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Side normalize winrate (recommended)
+          </label>
+          <TooltipProvider delayDuration={0}>
+            <UITooltip>
+              <TooltipTrigger>
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[350px] whitespace-normal">
+                <p className="mb-2">
+                  Statistically, Blue side tends to{" "}
+                  <a
+                    href="https://www.leagueofgraphs.com/stats/blue-vs-red/short"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: "underline" }}
+                  >
+                    win games earlier
+                  </a>
+                  , while Red side{" "}
+                  <a
+                    href="https://www.leagueofgraphs.com/stats/blue-vs-red/long"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: "underline" }}
+                  >
+                    performs better in longer games.
+                  </a>
+                </p>
+                <p className="mb-2">
+                  To remove this bias, we look at the prediction from both
+                  sides. For example:
+                  <br />
+                  • Original side: Blue side 60%
+                  <br />
+                  • With sides swapped: Red side 45%
+                  <br />• Normalized result: (60% + (100% - 45%)) ÷ 2 = 57.5%
+                </p>
+                <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                  This gives you a more accurate view of your team composition's
+                  power spikes, regardless of side!
+                </p>
+              </TooltipContent>
+            </UITooltip>
+          </TooltipProvider>
+        </div>
       </div>
       <div className="h-48">
         <Line data={data} options={options} />

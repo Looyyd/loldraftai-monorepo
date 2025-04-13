@@ -11,7 +11,6 @@ import type {
   DetailedPrediction,
 } from "@draftking/ui/lib/types";
 import { WinrateOverTimeChart } from "./WinrateOverTimeChart";
-import type { ImageComponent } from "@draftking/ui/lib/types";
 
 interface DraftAnalysisShowcaseProps {
   prediction: DetailedPrediction;
@@ -31,6 +30,7 @@ export const DraftAnalysisShowcase = ({
     gold_diff_15min,
     champion_impact,
     time_bucketed_predictions,
+    raw_time_bucketed_predictions,
   } = prediction;
 
   return (
@@ -199,6 +199,7 @@ export const DraftAnalysisShowcase = ({
         <div className="w-full">
           <WinrateOverTimeChart
             timeBucketedPredictions={time_bucketed_predictions}
+            rawTimeBucketedPredictions={raw_time_bucketed_predictions}
           />
         </div>
       </div>
