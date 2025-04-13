@@ -14,28 +14,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../ui/tooltip";
-import type { ImageComponent } from "@draftking/ui/lib/types";
+import type {
+  ImageComponent,
+  Champion,
+  FavoriteChampions,
+} from "@draftking/ui/lib/types";
 import {
   getChampionPlayRates,
   sortedPatches,
   type PlayRates,
 } from "@draftking/ui/lib/champions";
-
-// Types that should be moved to a shared types package
-export interface Champion {
-  id: number;
-  name: string;
-  icon: string;
-  searchName: string;
-}
-
-export type FavoriteChampions = {
-  top: number[];
-  jungle: number[];
-  mid: number[];
-  bot: number[];
-  support: number[];
-};
 
 interface ChampionGridProps {
   champions: Champion[];
@@ -261,7 +249,7 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
                     : "bg-secondary hover:bg-secondary/80 text-secondary-foreground"
                 }
               `}
-              title={key}
+              title={`Show ${label}`}
             >
               <ImageComponent
                 src={`/icons/roles/Position_Challenger-${label}.png`}
@@ -275,7 +263,7 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
         </div>
       </div>
 
-      <div className="h-[455px] overflow-y-auto p-1">
+      <div className="h-[455px] overflow-y-auto p-1 [scrollbar-gutter:stable]">
         <div className="grid grid-cols-[repeat(auto-fill,80px)] justify-center gap-2">
           {champions.map((champion) => (
             <ContextMenu key={champion.id}>

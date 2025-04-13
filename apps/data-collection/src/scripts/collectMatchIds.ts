@@ -53,9 +53,9 @@ async function collectMatchIds() {
         WHERE puuid IS NOT NULL
         AND region = ${region}::text::"Region"
         AND (
-          "matchesFetchedAt" IS NULL -- Older than 3 days, because we get 100 games
+          "matchesFetchedAt" IS NULL -- Older than 2 days
           OR "matchesFetchedAt" < ${new Date(
-            Date.now() - 3 * 24 * 60 * 60 * 1000
+            Date.now() - 2 * 24 * 60 * 60 * 1000
           )}
         )
         AND "rankUpdateTime" > ${new Date(
@@ -79,7 +79,9 @@ async function collectMatchIds() {
                 // queue: 700, // Summoner's rift clash, 420, // Ranked Solo/Duo queue
                 queue: 420, // TODO: automatically collect both queues, instead of manually changing this
                 // Less games for lower elos(to avoid having to many low elo games)
-                count: summoner.tier === "PLATINUM" ? 10 : 100, // max count
+                count: ["PLATINUM", "GOLD", "SILVER"].includes(summoner.tier)
+                  ? 50
+                  : 100, // max count
               }
             );
 

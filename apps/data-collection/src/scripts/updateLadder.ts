@@ -43,8 +43,11 @@ const tiersDivisions: TierDivisionPair[] = [
   ["DIAMOND", "IV"],
   ["EMERALD", "I"],
   ["PLATINUM", "I"],
-] as const; // we get high ranks because draft matters more in high elo
-const lowEloMaxPages = 100;
+  ["GOLD", "I"],
+  ["SILVER", "I"],
+] as const;
+const lowEloMaxPages = 120;
+const lowEloTiers = ["PLATINUM", "GOLD", "SILVER"];
 const queue = "RANKED_SOLO_5x5";
 
 // should be 50 requests every 10 seconds
@@ -70,7 +73,9 @@ async function updateLadder() {
           console.log(`Updating ${tierDivision}`);
           let page = 1;
           let hasMore = true;
-          let maxPage = tierDivision[0] === "PLATINUM" ? lowEloMaxPages : 1000;
+          let maxPage = lowEloTiers.includes(tierDivision[0])
+            ? lowEloMaxPages
+            : 1000;
           while (hasMore && page < maxPage) {
             await limiter.schedule(async () => {
               const leagueEntries = await riotApiClient.getLeagueEntries(

@@ -30,6 +30,16 @@ from utils.match_prediction.task_definitions import TaskDefinition, TaskType
 from utils import DATA_DIR, champion_play_rates_path
 
 
+class FixedMaskCount:
+    """Returns a fixed number of champions to mask."""
+
+    def __init__(self, count: int):
+        self.count = count
+
+    def __call__(self) -> int:
+        return self.count
+
+
 def get_elo_subgroup(feature: torch.Tensor) -> str:
     """
     Determine the ELO subgroup for a sample based on its ELO feature.
@@ -371,6 +381,12 @@ def main():
         action="store_true",
         help="Test model robustness by using patch N-1 to predict patch N outcomes",
     )
+    parser.add_argument(
+        "--mask-champions",
+        type=int,
+        default=0,
+        help="Number of champions to randomly mask in each team composition (default: 0)",
+    )
     args = parser.parse_args()
 
     device = get_best_device()
@@ -381,9 +397,21 @@ def main():
     model = load_model_state_dict(model, device=device, path=MODEL_PATH)
     model.eval()
 
+    # Get the unknown champion ID from the encoder
+    unknown_champion_id = champion_id_encoder.transform(["UNKNOWN"])[0]
+
+    # Define masking function if needed
+    masking_function = None
+    if args.mask_champions > 0:
+        masking_function = FixedMaskCount(args.mask_champions)
+        print(f"Masking {args.mask_champions} champions in each team composition")
+
     # Initialize test dataset and loader
     test_dataset = MatchDataset(
-        train_or_test="test", dataset_fraction=0.01 if args.small else 1.0
+        train_or_test="test",
+        dataset_fraction=0.01 if args.small else 1.0,
+        masking_function=masking_function,
+        unknown_champion_id=unknown_champion_id,
     )
     test_loader = DataLoader(
         test_dataset,
@@ -406,12 +434,13 @@ def main():
     )
 
     # Determine output filename based on mode
-    filename = (
-        "validation_patch_robustness_results.csv"
-        if args.test_patch_robustness
-        else "validation_results.csv"
-    )
-    output_file = DATA_DIR + "/" + filename
+    base_filename = "validation_results"
+    if args.test_patch_robustness:
+        base_filename = "validation_patch_robustness_results"
+    if args.mask_champions > 0:
+        base_filename = f"{base_filename}_masked_{args.mask_champions}"
+
+    output_file = DATA_DIR + "/" + base_filename + ".csv"
 
     # Print and save results
     print("\nValidation Results:")

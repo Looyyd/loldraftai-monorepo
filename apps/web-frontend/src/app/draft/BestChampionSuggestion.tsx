@@ -8,6 +8,7 @@ import type {
 } from "@draftking/ui/lib/types";
 import type { ImageComponent } from "@draftking/ui/lib/types";
 import CloudFlareImage from "@/components/CloudFlareImage";
+import { SuggestionMode } from "@draftking/ui/lib/types";
 interface BestChampionSuggestionProps {
   team1: Team;
   team2: Team;
@@ -16,7 +17,7 @@ interface BestChampionSuggestionProps {
   remainingChampions: Champion[];
   elo: Elo;
   patch: string;
-  suggestionMode: "favorites" | "meta" | "all";
+  suggestionMode: SuggestionMode;
 }
 
 export const BestChampionSuggestion = (props: BestChampionSuggestionProps) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import ChampionGrid from "./ChampionGrid";
 import TeamPanel from "./TeamPanel";
 import { HelpModal } from "./HelpModal";
@@ -36,7 +36,7 @@ import { usePersistedState } from "@draftking/ui/hooks/usePersistedState";
 import { ChangelogModal } from "./ChangelogModal";
 
 export default function Draft() {
-  const [remainingChampions, setRemainingChampions] =
+  const [remainingChampionsBase, setRemainingChampionsBase] =
     useState<Champion[]>(champions);
   const [teamOne, setTeamOne] = useState<Team>(emptyTeam);
   const [teamTwo, setTeamTwo] = useState<Team>(emptyTeam);
@@ -53,6 +53,12 @@ export default function Draft() {
       support: [],
     }
   );
+
+  // Memoize the champions passed to ChampionGrid
+  // This is just to have similar logic between desktop and web version(in desktop, bans are applied here)
+  const remainingChampions = useMemo(() => {
+    return remainingChampionsBase; // Add filtering logic here if needed in the future
+  }, [remainingChampionsBase]);
 
   const [showHelpModal, setShowHelpModal] = useState(() => {
     // Check if running in browser environment and if we're on desktop
@@ -71,11 +77,11 @@ export default function Draft() {
     useState<DraftOrderKey>("Draft Order");
   const { currentPatch } = useDraftStore();
 
+  const currentVersion = "1.0.1";
   const [showChangelogModal, setShowChangelogModal] = useState(() => {
     // Check if running in browser environment
     if (typeof window !== "undefined") {
       const lastSeenVersion = localStorage.getItem("lastSeenVersion");
-      const currentVersion = "1.0.0"; // Replace with your actual version
 
       if (!lastSeenVersion || lastSeenVersion !== currentVersion) {
         localStorage.setItem("lastSeenVersion", currentVersion);
@@ -90,10 +96,10 @@ export default function Draft() {
   const closeChangelogModal = () => setShowChangelogModal(false);
 
   const resetDraft = () => {
-    setRemainingChampions(champions);
     setTeamOne(emptyTeam);
     setTeamTwo(emptyTeam);
     setSelectedSpot(null);
+    setRemainingChampionsBase(champions);
     setResetAnalysisTrigger((prev) => prev + 1);
   };
 
@@ -116,12 +122,12 @@ export default function Draft() {
       selectedSpot,
       teamOne,
       teamTwo,
-      remainingChampions,
+      remainingChampionsBase,
       currentPatch,
       selectedDraftOrder,
       setTeamOne,
       setTeamTwo,
-      setRemainingChampions,
+      setRemainingChampionsBase,
       setSelectedSpot,
       handleDeleteChampion
     );
@@ -133,10 +139,10 @@ export default function Draft() {
       team,
       teamOne,
       teamTwo,
-      remainingChampions,
+      remainingChampionsBase,
       setTeamOne,
       setTeamTwo,
-      setRemainingChampions
+      setRemainingChampionsBase
     );
   };
 
@@ -197,7 +203,6 @@ export default function Draft() {
           <ChangelogModal
             isOpen={showChangelogModal}
             closeHandler={closeChangelogModal}
-            version="1.0.0" // Replace with your actual version
           />
 
           <div className="text-center text-lg font-semibold mb-4">

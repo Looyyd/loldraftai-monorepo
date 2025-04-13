@@ -20,6 +20,7 @@ import type {
   FavoriteChampions,
   SelectedSpot,
   Elo,
+  SuggestionMode,
 } from "@draftking/ui/lib/types";
 import { elos } from "@draftking/ui/lib/types";
 import { championIndexToFavoritesPosition } from "@draftking/ui/lib/types";
@@ -28,8 +29,7 @@ import { LowPickrateWarning } from "./LowPickrateWarning";
 import { HelpCircle } from "lucide-react";
 import { usePersistedState } from "../../hooks/usePersistedState";
 
-type SuggestionMode = "favorites" | "meta" | "all";
-
+// TODO: this is too much, need to simplify the types at least!
 interface AnalysisParentProps {
   team1: Team;
   team2: Team;

@@ -1,4 +1,5 @@
 import { RateLimit } from "@/app/lib/rate-limit";
+import { PredictionTracking } from "@/app/lib/prediction-tracking";
 import { NextResponse } from "next/server";
 
 const backendUrl = process.env.INFERENCE_BACKEND_URL ?? "http://127.0.0.1:8000";
@@ -32,6 +33,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Track prediction attempt (only tracks once per day per IP)
+    await PredictionTracking.trackPredictionIfNeeded();
+
     const body = await request.json();
 
     const response = await fetch(`${backendUrl}/predict-in-depth`, {

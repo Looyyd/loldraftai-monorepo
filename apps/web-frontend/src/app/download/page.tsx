@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Button } from "@draftking/ui/components/ui/button";
+import { track } from "@vercel/analytics";
 import { Download, AlertTriangle } from "lucide-react";
 import { FaWindows } from "react-icons/fa";
 
@@ -55,6 +56,7 @@ export default function DownloadPage() {
           asChild
           size="lg"
           className="gap-2 text-sm sm:text-base w-full sm:w-auto"
+          onClick={() => track("Download Request")}
         >
           <a
             href="https://releases.loldraftai.com/latest/LoLDraftAI.Setup.exe"

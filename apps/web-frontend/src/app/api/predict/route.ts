@@ -1,3 +1,4 @@
+import { PredictionTracking } from "@/app/lib/prediction-tracking";
 import { RateLimit } from "@/app/lib/rate-limit";
 import { NextResponse } from "next/server";
 
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Track prediction attempt (only tracks once per day per IP)
+    await PredictionTracking.trackPredictionIfNeeded();
     const body = await request.json();
 
     const response = await fetch(`${backendUrl}/predict`, {

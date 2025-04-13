@@ -6,19 +6,18 @@ import {
   TooltipProvider,
 } from "../ui/tooltip";
 import { WinrateBar } from "./WinrateBar";
+import type {
+  ImageComponent,
+  DetailedPrediction,
+} from "@draftking/ui/lib/types";
 import { WinrateOverTimeChart } from "./WinrateOverTimeChart";
 import type { ImageComponent } from "@draftking/ui/lib/types";
 
 interface DraftAnalysisShowcaseProps {
-  prediction: {
-    win_probability: number;
-    gold_diff_15min: number[];
-    champion_impact: number[];
-    time_bucketed_predictions: Record<string, number>;
-  };
+  prediction: DetailedPrediction;
   team1: Team;
   team2: Team;
-  ImageComponent: ImageComponent; // Add ImageComponent prop
+  ImageComponent: ImageComponent;
 }
 
 export const DraftAnalysisShowcase = ({

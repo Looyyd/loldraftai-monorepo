@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +10,6 @@ import { InfoIcon } from "lucide-react";
 export interface ChangelogModalProps {
   isOpen: boolean;
   closeHandler: () => void;
-  version: string;
 }
 
 export const ChangelogModal: React.FC<ChangelogModalProps> = ({
@@ -24,36 +22,21 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <InfoIcon className="h-5 w-5" />
-            Important Model Update
+            Model Update
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-sm leading-relaxed">
-              We&apos;ve fixed a bug in our model training process that was
-              causing predictions to be overconfident, it also led to
-              incorrectly report an accuracy of 62% in a reddit post. The new
-              model should now provide:
+              Model predictions for incomplete drafts, especially those with
+              less than 5 champions picked, are now more accurate.
             </p>
-            <ul className="list-disc pl-5 space-y-1 text-sm">
-              <li>More moderate win probability predictions</li>
-              <li>More accurate overall assessments</li>
-            </ul>
-            <p className="text-sm text-muted-foreground mt-4">
-              You might notice some changes in predictions compared to before.
-              This is expected and represents more accurate assessments of draft
-              outcomes.
+            <p className="text-sm leading-relaxed">
+              This should significantly improve champion suggestions for early
+              draft picks.
             </p>
-            <p className="text-sm mt-4">
-              For more technical details about this update, you can read our{" "}
-              <Link
-                href="/blog/correction-reddit-post"
-                className="text-primary hover:underline"
-                onClick={closeHandler}
-              >
-                detailed blog post
-              </Link>
-              .
+            <p className="text-sm leading-relaxed">
+              Thanks to user Techniques on Discord for the report.
             </p>
           </div>
         </div>

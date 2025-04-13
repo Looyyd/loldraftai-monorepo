@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Champion, Team } from "@draftking/ui/lib/types";
 import { RateLimit } from "@/app/lib/rate-limit";
+import { PredictionTracking } from "@/app/lib/prediction-tracking";
 interface ChampionSuggestionRequest {
   team1: Team;
   team2: Team;
@@ -42,6 +43,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Track prediction attempt (only tracks once per day per IP)
+    await PredictionTracking.trackPredictionIfNeeded();
+
     const body: ChampionSuggestionRequest = await request.json();
     const {
       team1,

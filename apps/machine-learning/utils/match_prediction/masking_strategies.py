@@ -52,6 +52,7 @@ class StrategicMaskingDistribution:
         linear_probs = linear_probs / linear_probs.sum() * remaining_prob
 
         # Assign the linearly distributed probabilities
+        # Assign the linearly distributed probabilities
         for idx, prob in zip(remaining_indices, linear_probs):
             self.probabilities[idx] = prob
 

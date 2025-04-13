@@ -8,13 +8,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "../ui/tooltip";
-
-interface PredictionResult {
-  win_probability: number;
-  gold_diff_15min: number[];
-  champion_impact: number[];
-  time_bucketed_predictions: Record<string, number>;
-}
+import { DetailedPrediction } from "@draftking/ui/lib/types";
 
 interface DraftAnalysisProps {
   team1: Team;
@@ -23,7 +17,7 @@ interface DraftAnalysisProps {
   patch: string;
   baseApiUrl: string;
   DraftAnalysisShowcase: React.ComponentType<{
-    prediction: PredictionResult;
+    prediction: DetailedPrediction;
     team1: Team;
     team2: Team;
   }>;
@@ -46,7 +40,7 @@ export const DraftAnalysis = ({
   baseApiUrl,
   DraftAnalysisShowcase,
 }: DraftAnalysisProps) => {
-  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+  const [prediction, setPrediction] = useState<DetailedPrediction | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
