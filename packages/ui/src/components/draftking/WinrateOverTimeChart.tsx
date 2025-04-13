@@ -184,7 +184,7 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
                 numbers to get the overall winrate.
               </p>
               <p className="mb-2">
-                For example: If you see a 60% winrate before 20 minutes, that
+                For example: If you see a 60% winrate before 25 minutes, that
                 means the team would win 60% of games that end that early - but
                 very few games actually end this quickly!
               </p>
