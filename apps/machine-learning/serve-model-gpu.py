@@ -257,13 +257,39 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
         "win_prediction_35_inf",
     ]
 
-    # Create time-bucketed predictions dictionary
+    # Create reversed champion order input to get opposite team perspective
+    reversed_champion_ids = api_input.champion_ids[5:] + api_input.champion_ids[:5]
+    reversed_input = APIInput(
+        champion_ids=reversed_champion_ids,
+        numerical_elo=api_input.numerical_elo,
+        patch=api_input.patch,
+        queue_type=api_input.queue_type,
+    )
+
+    # Get predictions for reversed team positions
+    reversed_model_inputs = preprocess_batch([reversed_input])
+    with torch.no_grad():
+        if use_mixed_precision:
+            with torch.amp.autocast(device.type):
+                reversed_outputs = model(reversed_model_inputs)
+        else:
+            reversed_outputs = model(reversed_model_inputs)
+
+    # Create balanced time-bucketed predictions dictionary by averaging both perspectives
     time_bucketed_predictions = {}
     for task in time_bucket_tasks:
-        if task in base_outputs:
-            bucket_pred = base_outputs[task]
-            bucket_prob = float(torch.sigmoid(bucket_pred).cpu().numpy()[0])
-            time_bucketed_predictions[task] = bucket_prob
+        if task in base_outputs and task in reversed_outputs:
+            # Get original blue side prediction
+            blue_pred = base_outputs[task]
+            blue_prob = float(torch.sigmoid(blue_pred).cpu().numpy()[0])
+
+            # Get reversed blue side prediction (original red side perspective)
+            reversed_pred = reversed_outputs[task]
+            reversed_prob = float(torch.sigmoid(reversed_pred).cpu().numpy()[0])
+
+            # Average the blue side prob with (1 - red side prob from reversed perspective)
+            balanced_prob = (blue_prob + (1 - reversed_prob)) / 2
+            time_bucketed_predictions[task] = balanced_prob
 
     # Calculate gold differences
     gold_diffs = calculate_gold_differences(base_outputs)
