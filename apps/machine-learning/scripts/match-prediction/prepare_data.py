@@ -331,8 +331,12 @@ def prepare_data(
             # Special columns
             "patch": "int32",
             "champion_ids": "object",  # array of ints needs object dtype
-            # All tasks are floats
-            **{task: "float32" for task in TASKS.keys()},
+            # All tasks are floats, excluding bucketed win prediction tasks
+            **{
+                task: "float32"
+                for task, task_def in TASKS.items()
+                if not task.startswith("win_prediction_")
+            },
         }
 
         new_df = pd.DataFrame(
@@ -377,6 +381,7 @@ def prepare_data(
             task
             for task, task_def in TASKS.items()
             if task_def.task_type == TaskType.BINARY_CLASSIFICATION
+            and not task.startswith("win_prediction_")  # Skip bucketed tasks
         ]
         for task in binary_tasks:
             if task == "win_prediction":
