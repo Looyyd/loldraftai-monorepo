@@ -28,9 +28,8 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-sm leading-relaxed">
-              New analysis feature: draft analysis now shows the winrate of a
-              team over game duration. This gives a picture of a team&apos;s
-              power spikes.
+              Draft analysis now shows the winrate of a team over game duration.
+              This gives a picture of a team&apos;s power spikes.
             </p>
             <p className="text-sm leading-relaxed">
               Elo rating config has been expanded to include Platinum, Gold and
