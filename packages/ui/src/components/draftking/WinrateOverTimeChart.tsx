@@ -247,8 +247,8 @@ export const WinrateOverTimeChart: React.FC<WinrateOverTimeChartProps> = ({
                   <br />
                   • Original side: Blue side 60%
                   <br />
-                  • With sides swapped: Red side 45%
-                  <br />• Normalized result: (60% + (100% - 45%)) ÷ 2 = 57.5%
+                  • With sides swapped: Red side 55%
+                  <br />• Normalized result: (60% + 55%) ÷ 2 = 57.5%
                 </p>
                 <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
                   This gives you a more accurate view of your team composition's
