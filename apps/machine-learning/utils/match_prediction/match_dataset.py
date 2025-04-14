@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import pyarrow.parquet as pq
 from torch.utils.data import IterableDataset
-from typing import Callable, Optional, List
+from typing import Callable, Optional, List, Dict
 import psutil
 import multiprocessing
 
@@ -61,7 +61,7 @@ class MatchDataset(IterableDataset):
     def __init__(
         self,
         masking_function: Optional[Callable[[], int]] = None,
-        unknown_champion_id=None,
+        unknown_champion_ids: Optional[Dict[str, int]] = None,
         train_or_test="train",
         dataset_fraction: float = 1.0,
         patch_augmentation_prob: float = 0.0,
@@ -87,7 +87,7 @@ class MatchDataset(IterableDataset):
 
         self.total_samples = self._count_total_samples()
         self.masking_function = masking_function
-        self.unknown_champion_id = unknown_champion_id
+        self.unknown_champion_ids = unknown_champion_ids
 
         # Load patch mapping if patch augmentation is enabled
         self.patch_mapping = None
@@ -187,7 +187,7 @@ class MatchDataset(IterableDataset):
 
     def _get_samples(self, df_chunk):
         # Only handle champion masking if needed
-        if self.masking_function is not None and self.unknown_champion_id is not None:
+        if self.masking_function is not None and self.unknown_champion_ids is not None:
             df_chunk["champion_ids"] = df_chunk["champion_ids"].apply(
                 lambda x: self._mask_champions(x, self.masking_function())
             )
@@ -220,11 +220,12 @@ class MatchDataset(IterableDataset):
         return samples
 
     def _mask_champions(self, champion_list: List[int], num_to_mask: int) -> List[int]:
-        """Masks a specific number of champions in the list"""
+        """Masks a specific number of champions in the list, using role-specific unknown IDs"""
+        roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"] * 2  # For both teams
         mask_indices = np.random.choice(
             len(champion_list), size=num_to_mask, replace=False
         )
         return [
-            self.unknown_champion_id if i in mask_indices else ch_id
+            self.unknown_champion_ids[roles[i]] if i in mask_indices else ch_id
             for i, ch_id in enumerate(champion_list)
         ]

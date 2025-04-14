@@ -85,21 +85,25 @@ def set_random_seeds(seed=42):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def get_num_champions() -> tuple[int, int]:
-    """Get the total number of champion embeddings needed and the ID for unknown champions.
+def get_num_champions() -> tuple[int, Dict[str, int]]:
+    """Get the total number of champion embeddings needed and the IDs for unknown champions per role.
 
     Returns:
-        tuple[int, int]: (num_champions, unknown_champion_id)
+        tuple[int, Dict[str, int]]: (num_champions, {role: unknown_champion_id})
     """
     with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
         champion_id_mapping = pickle.load(f)["mapping"]
 
-    # Get the unknown champion ID directly from the encoder
-    unknown_champion_id = champion_id_mapping.transform(["UNKNOWN"])[0]
-    # Total number of embeddings is simply the number of classes in the encoder
+    # Get the unknown champion IDs for each role
+    roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+    unknown_champion_ids = {
+        role: champion_id_mapping.transform([f"UNKNOWN_{role}"])[0] for role in roles
+    }
+
+    # Total number of embeddings is the number of classes in the encoder
     num_champions = len(champion_id_mapping.classes_)
 
-    return num_champions, unknown_champion_id
+    return num_champions, unknown_champion_ids
 
 
 def collate_fn(

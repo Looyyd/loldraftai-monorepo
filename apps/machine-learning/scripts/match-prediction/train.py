@@ -597,7 +597,7 @@ def train_model(
     best_metric = float("inf")  # For loss minimization
     best_model_state = None
 
-    num_champions, unknown_champion_id = get_num_champions()
+    num_champions, unknown_champion_ids = get_num_champions()
 
     # Initialize the datasets with masking parameters and dataset fraction
     datasets = []
@@ -609,7 +609,7 @@ def train_model(
 
         dataset = MatchDataset(
             masking_function=masking_function,
-            unknown_champion_id=unknown_champion_id,
+            unknown_champion_ids=unknown_champion_ids,
             train_or_test=train_or_test,
             dataset_fraction=config.dataset_fraction if split == "train" else 1.0,
             patch_augmentation_prob=0.1 if split == "train" else 0.0,

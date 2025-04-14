@@ -51,7 +51,10 @@ def create_champion_id_encoder(data_files: List[str]) -> LabelEncoder:
         unique_values.update(df["champion_ids"].explode().unique())
 
     unique_values = sorted(unique_values)
-    unique_values.append("UNKNOWN")
+    # Add role-specific unknown champions
+    roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+    for role in roles:
+        unique_values.append(f"UNKNOWN_{role}")
 
     encoder = LabelEncoder()
     encoder.fit(unique_values)
