@@ -63,6 +63,8 @@ class InDepthPrediction(BaseModel):
     win_probability: float
     gold_diff_15min: List[float]  # [TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY]
     champion_impact: List[float]  # [champ1_impact, champ2_impact, ..., champ10_impact]
+    time_bucketed_predictions: Dict[str, float]  # Side normalized predictions
+    raw_time_bucketed_predictions: Dict[str, float]  # Non-normalized predictions
 
 
 class WinratePrediction(BaseModel):
@@ -263,6 +265,20 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
     await request_queue.put({"input": base_input, "future": base_future})
     futures.append(base_future)
 
+    # Create reversed champion order input to get opposite team perspective
+    reversed_champion_ids = base_input.champion_ids[5:] + base_input.champion_ids[:5]
+    reversed_input = ModelInput(
+        champion_ids=reversed_champion_ids,
+        patch=base_input.patch,
+        elo=base_input.elo,
+        queue_type=base_input.queue_type,
+    )
+
+    # Queue reversed prediction
+    reversed_future = loop.create_future()
+    await request_queue.put({"input": reversed_input, "future": reversed_future})
+    futures.append(reversed_future)
+
     # Queue masked predictions only for known champions
     for masked_input in masked_inputs:
         masked_future = loop.create_future()
@@ -272,15 +288,48 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
     # Wait for all results
     results = await asyncio.gather(*futures)
 
-    # Extract base prediction and masked predictions
+    # Extract base prediction, reversed prediction, and masked predictions
     base_result = results[0]
-    masked_results = results[1:]
+    reversed_result = results[1]
+    masked_results = results[2:]
 
-    # Initialize champion impact array with zeros
-    champion_impact = [0.0] * 10
+    # Extract base win probability
+    base_winrate = base_result["win_probability"]
+
+    # Define time bucket tasks
+    time_bucket_tasks = [
+        "win_prediction_0_25",
+        "win_prediction_25_30",
+        "win_prediction_30_35",
+        "win_prediction_35_inf",
+    ]
+
+    # Store the raw (non-normalized) predictions
+    raw_time_bucketed_predictions = {}
+    for task in time_bucket_tasks:
+        if task in base_result["raw_predictions"]:
+            raw_prob = 1 / (1 + np.exp(-base_result["raw_predictions"][task]))
+            raw_time_bucketed_predictions[task] = float(raw_prob)
+
+    # Create balanced time-bucketed predictions by averaging both perspectives
+    time_bucketed_predictions = {}
+    for task in time_bucket_tasks:
+        if (
+            task in base_result["raw_predictions"]
+            and task in reversed_result["raw_predictions"]
+        ):
+            # Get original blue side prediction
+            blue_prob = 1 / (1 + np.exp(-base_result["raw_predictions"][task]))
+
+            # Get reversed blue side prediction (original red side perspective)
+            reversed_prob = 1 / (1 + np.exp(-reversed_result["raw_predictions"][task]))
+
+            # Average the blue side prob with (1 - red side prob from reversed perspective)
+            balanced_prob = (float(blue_prob) + (1 - float(reversed_prob))) / 2
+            time_bucketed_predictions[task] = balanced_prob
 
     # Calculate champion impact only for known champions
-    base_winrate = base_result["win_probability"]
+    champion_impact = [0.0] * 10
     for idx, masked_result in zip(known_champion_indices, masked_results):
         impact = base_winrate - masked_result["win_probability"]
         if idx >= 5:  # Red side champions
@@ -291,6 +340,8 @@ async def predict_in_depth(api_input: APIInput, api_key: str = Depends(verify_ap
         win_probability=base_winrate,
         gold_diff_15min=calculate_gold_differences(base_result["raw_predictions"]),
         champion_impact=champion_impact,
+        time_bucketed_predictions=time_bucketed_predictions,
+        raw_time_bucketed_predictions=raw_time_bucketed_predictions,
     )
 
 
