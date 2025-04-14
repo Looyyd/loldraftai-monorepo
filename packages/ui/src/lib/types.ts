@@ -49,7 +49,14 @@ export type SelectedSpot = {
   championIndex: ChampionIndex;
 };
 
-export const elos = ["emerald", "diamond", "master +"] as const;
+export const elos = [
+  "silver",
+  "gold",
+  "platinum",
+  "emerald",
+  "diamond",
+  "master +",
+] as const;
 export type Elo = (typeof elos)[number];
 
 export type SuggestionMode = "favorites" | "meta" | "all";

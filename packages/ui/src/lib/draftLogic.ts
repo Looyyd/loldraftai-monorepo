@@ -26,6 +26,9 @@ export type DraftOrderKey = keyof typeof DRAFT_ORDERS;
 
 export const eloToNumerical = (elo: Elo): number => {
   const eloMap: Record<Elo, number> = {
+    silver: 6,
+    gold: 5,
+    platinum: 4,
     emerald: 3,
     diamond: 1,
     "master +": 0,
