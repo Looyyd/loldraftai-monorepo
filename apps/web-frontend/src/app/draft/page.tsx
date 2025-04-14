@@ -77,7 +77,7 @@ export default function Draft() {
     useState<DraftOrderKey>("Draft Order");
   const { currentPatch } = useDraftStore();
 
-  const currentVersion = "1.0.1";
+  const currentVersion = "1.0.2";
   const [showChangelogModal, setShowChangelogModal] = useState(() => {
     // Check if running in browser environment
     if (typeof window !== "undefined") {

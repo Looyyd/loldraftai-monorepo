@@ -28,15 +28,13 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-sm leading-relaxed">
-              Model predictions for incomplete drafts, especially those with
-              less than 5 champions picked, are now more accurate.
+              New analysis feature: draft analysis now shows the winrate of a
+              team over game duration. This gives a picture of a team&apos;s
+              power spikes.
             </p>
             <p className="text-sm leading-relaxed">
-              This should significantly improve champion suggestions for early
-              draft picks.
-            </p>
-            <p className="text-sm leading-relaxed">
-              Thanks to user Techniques on Discord for the report.
+              Elo rating config has been expanded to include Platinum, Gold and
+              Silver tiers.
             </p>
           </div>
         </div>
