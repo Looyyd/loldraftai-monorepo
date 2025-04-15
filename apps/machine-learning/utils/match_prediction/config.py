@@ -7,8 +7,8 @@ from utils.match_prediction.masking_strategies import MASKING_STRATEGIES
 class TrainingConfig:
     def __init__(self):
         # Default values
-        self.num_epochs = 50
-        self.annealing_epoch = 20
+        self.num_epochs = 100
+        self.annealing_epoch = 40
         self.hidden_dims = [1024, 512, 256, 128, 64]
         self.dropout = 0.5
         self.learning_rate = 5e-4
@@ -19,7 +19,7 @@ class TrainingConfig:
         self.elo_embed_dim = 64  # Reduced from 64
 
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
-        self.weight_decay = 0.05
+        self.weight_decay = 0.1
         self.elo_reg_lambda = 0  # Weight for Elo regularization loss
         self.patch_reg_lambda = 0  # Weight for patch regularization loss
         self.champ_patch_reg_lambda = 0.0
