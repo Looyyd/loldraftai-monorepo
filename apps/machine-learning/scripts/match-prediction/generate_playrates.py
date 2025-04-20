@@ -103,17 +103,17 @@ def main():
     )
 
     # Limit to only the latest 10 patches
-    latest_10_patches = dict(list(sorted_play_rates.items())[:10])
+    latest_5_patches = dict(list(sorted_play_rates.items())[:5])
 
     # Save to JSON
     os.makedirs(os.path.dirname(champion_play_rates_path), exist_ok=True)
 
     with open(champion_play_rates_path, "w") as f:
-        json.dump(latest_10_patches, f, indent=2)
+        json.dump(latest_5_patches, f, indent=2)
 
     print(f"Play rates saved to {champion_play_rates_path}")
     print(
-        f"Processed {len(play_rates)} patches, saved {len(latest_10_patches)} most recent patches"
+        f"Processed {len(play_rates)} patches, saved {len(latest_5_patches)} most recent patches"
     )
 
 
