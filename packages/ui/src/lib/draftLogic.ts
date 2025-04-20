@@ -184,14 +184,12 @@ export function addChampion(
 
   const teamToAddToIndex = nextTeam === "BLUE" ? 0 : 1;
   const targetTeam = teamToAddToIndex === 0 ? teamOne : teamTwo;
-  console.debug("Target team selected:", targetTeam);
 
   // Get all champions including the new one
   const allChampions: Champion[] = Object.values(targetTeam).filter(
     (c): c is Champion => c !== undefined
   );
   allChampions.push(championToAdd); // Add our copy with isManuallyPlaced set
-  console.debug("All champions including the new one:", allChampions);
 
   // Get play rates for all champions
   const playRatesMap: Map<number, PlayRates> = new Map();
@@ -199,10 +197,6 @@ export function addChampion(
     const rates = getChampionPlayRates(champ.id, currentPatch);
     if (rates) {
       playRatesMap.set(champ.id, rates);
-      console.debug(
-        `Play rates for champion ${champ.name} (ID: ${champ.id}):`,
-        rates
-      );
     }
   }
 
@@ -213,9 +207,6 @@ export function addChampion(
   const reassignableChampions: Champion[] = allChampions.filter(
     (c) => !c.isManuallyPlaced
   );
-
-  console.debug("Manually placed champions:", manuallyPlacedChampions);
-  console.debug("Reassignable champions:", reassignableChampions);
 
   // Generate all possible position assignments
   type Assignment = { [roleIndex: number]: Champion };
@@ -241,27 +232,20 @@ export function addChampion(
         const roleRate = rates ? rates[role] : 0.01; // Default to low probability if no data
         probability *= roleRate;
       }
-      console.debug("Current assignment probability:", probability);
 
       if (probability > bestProbability) {
         bestProbability = probability;
         bestAssignment = { ...currentAssignment };
-        console.debug(
-          "New best assignment found:",
-          bestAssignment,
-          "with probability:",
-          bestProbability
-        );
       }
       return;
     }
 
-    const currentChamp = champions[0];
+    const currentChamp = champions[0] as Champion;
     const restChampions = champions.slice(1);
 
     // Try each remaining position for the current champion
     for (let i = 0; i < remainingPositions.length; i++) {
-      const roleIndex = remainingPositions[i];
+      const roleIndex = remainingPositions[i] as number;
       const updatedAssignment = {
         ...currentAssignment,
         [roleIndex]: currentChamp,
@@ -271,12 +255,6 @@ export function addChampion(
         ...remainingPositions.slice(i + 1),
       ];
 
-      console.debug(
-        "Trying assignment for champion:",
-        currentChamp.name,
-        "at position:",
-        roleIndex
-      );
       generateAssignments(restChampions, updatedAssignment, updatedPositions);
     }
   }
@@ -300,20 +278,7 @@ export function addChampion(
     (pos) => !occupiedPositions.includes(pos)
   );
 
-  console.debug(
-    "Initial assignment with manually placed champions:",
-    initialAssignment
-  );
-  console.debug(
-    "Available positions for reassignable champions:",
-    availablePositions
-  );
-
   // Generate all possible assignments for reassignable champions
-  console.debug(
-    "Starting assignment generation with reassignable champions:",
-    reassignableChampions
-  );
   generateAssignments(
     reassignableChampions,
     initialAssignment,
@@ -324,9 +289,8 @@ export function addChampion(
   if (bestAssignment) {
     const newTeam = { ...emptyTeam };
     for (const [roleIndex, champ] of Object.entries(bestAssignment)) {
-      newTeam[parseInt(roleIndex) as keyof Team] = champ;
+      newTeam[parseInt(roleIndex) as keyof Team] = champ as Champion;
     }
-    console.debug("Best assignment applied to new team:", newTeam);
 
     if (teamToAddToIndex === 0) {
       setTeamOne(newTeam);

@@ -5,7 +5,7 @@ import { ChampionGrid } from "@draftking/ui/components/draftking/ChampionGrid";
 import { AnalysisParent } from "./components/AnalysisParent";
 import { PlainImage } from "./components/PlainImage";
 import { HelpModal } from "@draftking/ui/components/draftking/HelpModal";
-import { champions, roleToIndexMap } from "@draftking/ui/lib/champions";
+import { champions } from "@draftking/ui/lib/champions";
 import { useDraftStore } from "./stores/draftStore";
 import type {
   Team,
@@ -30,7 +30,6 @@ import {
   handleDeleteChampion as handleDeleteChampionLogic,
   type DraftOrderKey,
 } from "@draftking/ui/lib/draftLogic";
-import { getChampionRoles } from "@draftking/ui/lib/champions";
 import { StatusMessage } from "@draftking/ui/components/draftking/StatusMessage";
 import { useToast } from "@draftking/ui/hooks/use-toast";
 import { usePersistedState } from "@draftking/ui/hooks/usePersistedState";
