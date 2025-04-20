@@ -48,10 +48,18 @@ const SearchBar = ({
   filteredChampions,
   inputRef,
 }: SearchBarProps) => {
+  const exactMatch = searchTerm
+    ? filteredChampions.find(
+        (champion) => champion.name.toLowerCase() === searchTerm.toLowerCase()
+      )
+    : null;
+
+  const showTooltip = filteredChampions.length === 1 || !!exactMatch;
+
   return (
     <div className="w-full relative z-10">
       <TooltipProvider>
-        <Tooltip open={filteredChampions.length === 1}>
+        <Tooltip open={showTooltip}>
           <TooltipTrigger asChild>
             <Input
               className="rounded-t ring-2 ring-neutral-950 ring-offset-2 ring-offset-white dark:ring-neutral-300 dark:ring-offset-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-300"
@@ -64,7 +72,8 @@ const SearchBar = ({
             />
           </TooltipTrigger>
           <TooltipContent side="top" align="start">
-            Press enter to select {filteredChampions[0]?.name}
+            Press enter to select{" "}
+            {exactMatch?.name || filteredChampions[0]?.name}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -189,13 +198,23 @@ export const ChampionGrid: React.FC<ChampionGridProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (
-      e.key === "Enter" &&
-      filteredChampions.length === 1 &&
-      filteredChampions[0]
-    ) {
-      addChampion(filteredChampions[0]);
-      setSearchTerm("");
+    if (e.key === "Enter") {
+      // Case 1: Only one champion is filtered
+      if (filteredChampions.length === 1 && filteredChampions[0]) {
+        addChampion(filteredChampions[0]);
+        setSearchTerm("");
+        return;
+      }
+
+      // Case 2: Search term exactly matches a champion name (case insensitive)
+      const exactMatch = filteredChampions.find(
+        (champion) => champion.name.toLowerCase() === searchTerm.toLowerCase()
+      );
+      if (exactMatch) {
+        addChampion(exactMatch);
+        setSearchTerm("");
+        return;
+      }
     }
   };
 
