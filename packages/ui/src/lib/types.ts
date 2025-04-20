@@ -3,6 +3,7 @@ export interface Champion {
   name: string;
   searchName: string;
   icon: string;
+  isManuallyPlaced?: boolean;
 }
 
 export interface ImageComponentProps {

@@ -96,6 +96,14 @@ export function handleSpotSelection(
     return;
   }
 
+  // Mark both champions as manually placed if they exist
+  if (championFromSelectedSpot) {
+    championFromSelectedSpot.isManuallyPlaced = true;
+  }
+  if (targetChampion) {
+    targetChampion.isManuallyPlaced = true;
+  }
+
   if (selectedSpot.teamIndex === 1) {
     if (team === 1) {
       teamOneCopy[selectedSpot.championIndex] = targetChampion;
@@ -137,6 +145,12 @@ export function addChampion(
   setSelectedSpot: (spot: SelectedSpot | null) => void,
   handleDeleteChampion: (index: ChampionIndex, team: Team) => Champion[]
 ) {
+  // Create a copy of the champion with isManuallyPlaced set based on whether we have a selectedSpot
+  const championToAdd = {
+    ...champion,
+    isManuallyPlaced: selectedSpot !== null,
+  };
+
   if (selectedSpot !== null) {
     const team = selectedSpot.teamIndex === 1 ? teamOne : teamTwo;
     let updatedRemainingChampions = handleDeleteChampion(
@@ -146,11 +160,11 @@ export function addChampion(
 
     if (selectedSpot.teamIndex === 1) {
       const newTeam = { ...teamOne };
-      newTeam[selectedSpot.championIndex] = champion;
+      newTeam[selectedSpot.championIndex] = championToAdd;
       setTeamOne(newTeam);
     } else {
       const newTeam = { ...teamTwo };
-      newTeam[selectedSpot.championIndex] = champion;
+      newTeam[selectedSpot.championIndex] = championToAdd;
       setTeamTwo(newTeam);
     }
     updatedRemainingChampions = updatedRemainingChampions.filter(
@@ -176,7 +190,7 @@ export function addChampion(
   const allChampions: Champion[] = Object.values(targetTeam).filter(
     (c): c is Champion => c !== undefined
   );
-  allChampions.push(champion);
+  allChampions.push(championToAdd); // Add our copy with isManuallyPlaced set
   console.debug("All champions including the new one:", allChampions);
 
   // Get play rates for all champions
@@ -191,6 +205,17 @@ export function addChampion(
       );
     }
   }
+
+  // Separate manually placed champions from those we can reassign
+  const manuallyPlacedChampions: Champion[] = allChampions.filter(
+    (c) => c.isManuallyPlaced
+  );
+  const reassignableChampions: Champion[] = allChampions.filter(
+    (c) => !c.isManuallyPlaced
+  );
+
+  console.debug("Manually placed champions:", manuallyPlacedChampions);
+  console.debug("Reassignable champions:", reassignableChampions);
 
   // Generate all possible position assignments
   type Assignment = { [roleIndex: number]: Champion };
@@ -256,13 +281,44 @@ export function addChampion(
     }
   }
 
-  // Start with empty assignment and consider all positions
-  const allPositions = [0, 1, 2, 3, 4];
-  console.debug("Considering all positions:", allPositions);
+  // Start with an assignment that includes manually placed champions
+  const initialAssignment: Assignment = {};
+  const occupiedPositions: number[] = [];
 
-  // Generate all possible assignments with ALL champions (existing + new)
-  console.debug("Starting assignment generation with champions:", allChampions);
-  generateAssignments(allChampions, {}, allPositions);
+  // Add manually placed champions to initial assignment
+  for (const [index, champ] of Object.entries(targetTeam)) {
+    if (champ && champ.isManuallyPlaced) {
+      const roleIndex = parseInt(index);
+      initialAssignment[roleIndex] = champ;
+      occupiedPositions.push(roleIndex);
+    }
+  }
+
+  // Determine available positions for reassignable champions
+  const allPositions = [0, 1, 2, 3, 4];
+  const availablePositions = allPositions.filter(
+    (pos) => !occupiedPositions.includes(pos)
+  );
+
+  console.debug(
+    "Initial assignment with manually placed champions:",
+    initialAssignment
+  );
+  console.debug(
+    "Available positions for reassignable champions:",
+    availablePositions
+  );
+
+  // Generate all possible assignments for reassignable champions
+  console.debug(
+    "Starting assignment generation with reassignable champions:",
+    reassignableChampions
+  );
+  generateAssignments(
+    reassignableChampions,
+    initialAssignment,
+    availablePositions
+  );
 
   // Apply the best assignment
   if (bestAssignment) {
@@ -295,6 +351,9 @@ export function handleDeleteChampion(
     return remainingChampions;
   }
 
+  // Reset isManuallyPlaced flag when removing champion
+  const championToAdd = { ...champion, isManuallyPlaced: false };
+
   // Check if the champion is already in the remaining champions list
   const isChampionAlreadyRemaining = remainingChampions.some(
     (remainingChampion) => remainingChampion.id === champion.id
@@ -302,7 +361,7 @@ export function handleDeleteChampion(
 
   let champions;
   if (!isChampionAlreadyRemaining) {
-    champions = [...remainingChampions, champion].sort((a, b) =>
+    champions = [...remainingChampions, championToAdd].sort((a, b) =>
       a.name.localeCompare(b.name)
     );
     setRemainingChampions(champions);
