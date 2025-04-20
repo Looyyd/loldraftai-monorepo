@@ -209,6 +209,8 @@ function App() {
           if (!champion) continue;
 
           const targetTeam = player.team === 1 ? newTeamOne : newTeamTwo;
+          const forcedDraftOrder =
+            player.team === 1 ? "Blue then Red" : "Red then Blue";
 
           // Skip if champion is already in either team
           const isAlreadyInTeams = [
@@ -217,22 +219,31 @@ function App() {
           ].some((c) => c && c.id === champion.id);
           if (isAlreadyInTeams) continue;
 
-          // Get potential roles based on play rates
-          const potentialRoles = getChampionRoles(champion.id, currentPatch);
-          const potentialRolesIndexes = [
-            ...potentialRoles.map((role) => roleToIndexMap[role]),
-            ...Array.from({ length: 5 }, (_, i) => i), // Add remaining roles
-          ].filter((value, index, self) => self.indexOf(value) === index); // Remove duplicates
-
-          // Try to place champion in their most played role first
-          for (const roleIndex of potentialRolesIndexes) {
-            if (!targetTeam[roleIndex as keyof Team]) {
-              targetTeam[roleIndex as keyof Team] = champion;
+          // Add champion using existing logic
+          addChampionLogic(
+            champion,
+            null, // no selected spot since this is auto-placement
+            newTeamOne,
+            newTeamTwo,
+            remainingChampions,
+            currentPatch,
+            forcedDraftOrder, // Use the forced draft order instead of selectedDraftOrder
+            (team) => {
               hasChanges = true;
-              newlyPickedChampions.push(champion);
-              break;
-            }
-          }
+              Object.assign(newTeamOne, team);
+            },
+            (team) => {
+              hasChanges = true;
+              Object.assign(newTeamTwo, team);
+            },
+            (champions) => {
+              if (hasChanges) {
+                newlyPickedChampions.push(champion);
+              }
+            },
+            () => {}, // setSelectedSpot is not needed in live tracking
+            handleDeleteChampion
+          );
         }
 
         // Only update teams if there were actual changes
