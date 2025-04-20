@@ -6,7 +6,12 @@ import type {
   SelectedSpot,
   Elo,
 } from "./types";
-import { getChampionRoles, roleToIndexMap } from "./champions";
+import {
+  getChampionPlayRates,
+  getChampionRoles,
+  roleToIndexMap,
+  type PlayRates,
+} from "./champions";
 
 export const emptyTeam: Team = {
   0: undefined,
@@ -164,31 +169,113 @@ export function addChampion(
   setRemainingChampions(champions);
 
   const teamToAddToIndex = nextTeam === "BLUE" ? 0 : 1;
-  const potentialRoles = getChampionRoles(champion.id, currentPatch);
-  const potentialRolesIndexes = potentialRoles.map(
-    (role) => roleToIndexMap[role]
-  );
+  const targetTeam = teamToAddToIndex === 0 ? teamOne : teamTwo;
+  console.debug("Target team selected:", targetTeam);
 
-  for (let i = 0; i < 5; i++) {
-    if (!potentialRolesIndexes.includes(i)) {
-      potentialRolesIndexes.push(i);
+  // Get all champions including the new one
+  const allChampions: Champion[] = Object.values(targetTeam).filter(
+    (c): c is Champion => c !== undefined
+  );
+  allChampions.push(champion);
+  console.debug("All champions including the new one:", allChampions);
+
+  // Get play rates for all champions
+  const playRatesMap: Map<number, PlayRates> = new Map();
+  for (const champ of allChampions) {
+    const rates = getChampionPlayRates(champ.id, currentPatch);
+    if (rates) {
+      playRatesMap.set(champ.id, rates);
+      console.debug(
+        `Play rates for champion ${champ.name} (ID: ${champ.id}):`,
+        rates
+      );
     }
   }
 
-  for (let i = 0; i < 5; i++) {
-    const roleIndex = potentialRolesIndexes[i];
-    if (teamToAddToIndex === 0 && !teamOne[roleIndex as keyof Team]) {
-      setTeamOne({
-        ...teamOne,
-        [roleIndex as keyof Team]: champion,
-      });
+  // Generate all possible position assignments
+  type Assignment = { [roleIndex: number]: Champion };
+  let bestAssignment: Assignment | null = null;
+  let bestProbability: number = -1;
+
+  // Function to generate all permutations
+  function generateAssignments(
+    champions: Champion[],
+    currentAssignment: Assignment,
+    remainingPositions: number[]
+  ): void {
+    if (champions.length === 0) {
+      // Calculate probability of this assignment
+      let probability = 1.0;
+      for (const [roleIndex, champ] of Object.entries(currentAssignment)) {
+        const index = parseInt(roleIndex);
+        const role = Object.keys(roleToIndexMap).find(
+          (key) => roleToIndexMap[key] === index
+        ) as keyof PlayRates;
+
+        const rates = playRatesMap.get(champ.id);
+        const roleRate = rates ? rates[role] : 0.01; // Default to low probability if no data
+        probability *= roleRate;
+      }
+      console.debug("Current assignment probability:", probability);
+
+      if (probability > bestProbability) {
+        bestProbability = probability;
+        bestAssignment = { ...currentAssignment };
+        console.debug(
+          "New best assignment found:",
+          bestAssignment,
+          "with probability:",
+          bestProbability
+        );
+      }
       return;
-    } else if (teamToAddToIndex === 1 && !teamTwo[roleIndex as keyof Team]) {
-      setTeamTwo({
-        ...teamTwo,
-        [roleIndex as keyof Team]: champion,
-      });
-      return;
+    }
+
+    const currentChamp = champions[0];
+    const restChampions = champions.slice(1);
+
+    // Try each remaining position for the current champion
+    for (let i = 0; i < remainingPositions.length; i++) {
+      const roleIndex = remainingPositions[i];
+      const updatedAssignment = {
+        ...currentAssignment,
+        [roleIndex]: currentChamp,
+      };
+      const updatedPositions = [
+        ...remainingPositions.slice(0, i),
+        ...remainingPositions.slice(i + 1),
+      ];
+
+      console.debug(
+        "Trying assignment for champion:",
+        currentChamp.name,
+        "at position:",
+        roleIndex
+      );
+      generateAssignments(restChampions, updatedAssignment, updatedPositions);
+    }
+  }
+
+  // Start with empty assignment and consider all positions
+  const allPositions = [0, 1, 2, 3, 4];
+  console.debug("Considering all positions:", allPositions);
+
+  // Generate all possible assignments with ALL champions (existing + new)
+  console.debug("Starting assignment generation with champions:", allChampions);
+  generateAssignments(allChampions, {}, allPositions);
+
+  // Apply the best assignment
+  if (bestAssignment) {
+    const newTeam = { ...emptyTeam };
+    for (const [roleIndex, champ] of Object.entries(bestAssignment)) {
+      newTeam[parseInt(roleIndex) as keyof Team] = champ;
+    }
+    console.debug("Best assignment applied to new team:", newTeam);
+
+    if (teamToAddToIndex === 0) {
+      setTeamOne(newTeam);
+    } else {
+      setTeamTwo(newTeam);
     }
   }
 }
