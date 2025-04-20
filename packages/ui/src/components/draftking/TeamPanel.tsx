@@ -156,8 +156,8 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                       {/* Control buttons with team-specific positioning */}
                       <div
                         className={clsx("flex flex-col gap-2", {
-                          "order-first": is_first_team,
-                          "order-last": !is_first_team,
+                          "mr-1": is_first_team,
+                          "ml-1": !is_first_team,
                         })}
                       >
                         {/* Lock/unlock button with tooltip */}
@@ -192,34 +192,24 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-
-                        {/* Delete button with tooltip */}
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                className={clsx(
-                                  "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
-                                  {
-                                    "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
-                                      is_first_team,
-                                    "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
-                                      !is_first_team,
-                                  }
-                                )}
-                                onClick={(e) => handleDelete(e, championIndex)}
-                              >
-                                <Trash2
-                                  size={20}
-                                  className="text-white drop-shadow-sm"
-                                />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              Remove champion
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {/* Delete button */}
+                        <button
+                          className={clsx(
+                            "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
+                            {
+                              "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
+                                is_first_team,
+                              "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
+                                !is_first_team,
+                            }
+                          )}
+                          onClick={(e) => handleDelete(e, championIndex)}
+                        >
+                          <Trash2
+                            size={20}
+                            className="text-white drop-shadow-sm"
+                          />
+                        </button>{" "}
                       </div>
 
                       {/* Champion icon - now with its own hover effects */}

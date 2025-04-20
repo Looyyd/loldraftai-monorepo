@@ -395,7 +395,7 @@ function App() {
 
             <div className="flex flex-wrap items-stretch justify-evenly">
               <div className="flex w-full justify-between">
-                <div className="flex w-auto max-w-xs p-1">
+                <div className="flex w-[140px] p-1">
                   <TeamPanel
                     team={teamOne}
                     is_first_team={true}
@@ -419,7 +419,7 @@ function App() {
                   />
                 </div>
 
-                <div className="flex w-auto max-w-xs p-1">
+                <div className="flex w-[140px] p-1">
                   <TeamPanel
                     team={teamTwo}
                     is_first_team={false}
