@@ -1,6 +1,6 @@
 import React from "react";
 import clsx from "clsx";
-import { Lock, Unlock, LockOpen, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { LockClosedIcon, LockOpenIcon } from "@heroicons/react/24/solid";
 import type {
   Team,
@@ -108,47 +108,45 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
 
             return (
               <li key={index}>
-                <div
-                  className={clsx(
-                    "flex justify-center p-1 cursor-pointer",
-                    // Base styles
-                    "bg-opacity-0 rounded-lg",
-                    // Selected state using team colors
-                    {
-                      "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]":
-                        isSelected,
-                      "hover:bg-white/5": !isSelected,
-                      "hover:scale-110": !isSelected,
-                    },
-                    // Team-specific colors when selected
-                    {
-                      "from-blue-500/20 to-blue-600/10 shadow-blue-500":
-                        isSelected && is_first_team,
-                      "from-red-500/20 to-red-600/10 shadow-red-500":
-                        isSelected && !is_first_team,
-                    }
-                  )}
-                  onClick={() => handleSpotClick(championIndex)}
-                  onContextMenu={
-                    teamMember
-                      ? (e) => handleContextMenu(e, championIndex)
-                      : undefined
-                  }
-                >
+                {/* When empty, make the entire area clickable */}
+                {!teamMember ? (
                   <div
-                    className={clsx("flex items-center", {
-                      "flex-row": is_first_team,
-                      "flex-row-reverse": !is_first_team,
-                    })}
+                    className={clsx(
+                      "flex justify-center p-1 rounded-lg cursor-pointer transition-all",
+                      "hover:bg-white/5",
+                      // Selected state using team colors
+                      {
+                        "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]":
+                          isSelected,
+                      },
+                      // Team-specific colors when selected
+                      {
+                        "from-blue-500/20 to-blue-600/10 shadow-blue-500":
+                          isSelected && is_first_team,
+                        "from-red-500/20 to-red-600/10 shadow-red-500":
+                          isSelected && !is_first_team,
+                      }
+                    )}
+                    onClick={() => handleSpotClick(championIndex)}
                   >
-                    {!teamMember ? (
+                    <div className="hover:scale-110 transition-transform">
                       <ImageComponent
                         src={`/icons/roles/Position_Challenger-${role}.png`}
                         alt={role}
                         width={80}
                         height={80}
                       />
-                    ) : (
+                    </div>
+                  </div>
+                ) : (
+                  /* When filled, container is normal, but champion icon is clickable */
+                  <div className="flex justify-center p-1 rounded-lg">
+                    <div
+                      className={clsx("flex items-center", {
+                        "flex-row": is_first_team,
+                        "flex-row-reverse": !is_first_team,
+                      })}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         {/* Control buttons with team-specific positioning */}
                         <div
@@ -160,10 +158,12 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                           {/* Lock/unlock button */}
                           <button
                             className={clsx(
-                              "p-1.5 rounded transition-colors w-8 h-8 flex items-center justify-center",
+                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center",
                               {
-                                "bg-blue-400 hover:bg-blue-300": is_first_team,
-                                "bg-red-400 hover:bg-red-300": !is_first_team,
+                                "bg-blue-400 hover:bg-blue-300 hover:scale-110":
+                                  is_first_team,
+                                "bg-red-400 hover:bg-red-300 hover:scale-110":
+                                  !is_first_team,
                               }
                             )}
                             onClick={(e) =>
@@ -185,10 +185,12 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                           {/* Delete button */}
                           <button
                             className={clsx(
-                              "p-1.5 rounded transition-colors w-8 h-8 flex items-center justify-center",
+                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center",
                               {
-                                "bg-blue-400 hover:bg-blue-300": is_first_team,
-                                "bg-red-400 hover:bg-red-300": !is_first_team,
+                                "bg-blue-400 hover:bg-blue-300 hover:scale-110":
+                                  is_first_team,
+                                "bg-red-400 hover:bg-red-300 hover:scale-110":
+                                  !is_first_team,
                               }
                             )}
                             onClick={(e) => handleDelete(e, championIndex)}
@@ -198,18 +200,41 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                           </button>
                         </div>
 
-                        {/* Champion icon */}
-                        <ImageComponent
-                          src={`/icons/champions/${teamMember.icon}`}
-                          alt={teamMember.name}
-                          className="block"
-                          width={80}
-                          height={80}
-                        />
+                        {/* Champion icon - now with its own hover effects */}
+                        <div
+                          className={clsx(
+                            "cursor-pointer transition-transform",
+                            "hover:bg-white/5 hover:scale-110",
+                            // Selected state using team colors
+                            {
+                              "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]":
+                                isSelected,
+                            },
+                            // Team-specific colors when selected
+                            {
+                              "from-blue-500/20 to-blue-600/10 shadow-blue-500":
+                                isSelected && is_first_team,
+                              "from-red-500/20 to-red-600/10 shadow-red-500":
+                                isSelected && !is_first_team,
+                            }
+                          )}
+                          onClick={() => handleSpotClick(championIndex)}
+                          onContextMenu={(e) =>
+                            handleContextMenu(e, championIndex)
+                          }
+                        >
+                          <ImageComponent
+                            src={`/icons/champions/${teamMember.icon}`}
+                            alt={teamMember.name}
+                            className="block"
+                            width={80}
+                            height={80}
+                          />
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                )}
               </li>
             );
           })}
