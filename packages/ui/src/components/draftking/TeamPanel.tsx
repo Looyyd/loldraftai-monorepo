@@ -9,6 +9,12 @@ import type {
   SelectedSpot,
   ImageComponent,
 } from "@draftking/ui/lib/types";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "../ui/tooltip";
 
 interface TeamPanelProps {
   team: Team;
@@ -147,93 +153,105 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                         "flex-row-reverse": !is_first_team,
                       })}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        {/* Control buttons with team-specific positioning */}
-                        <div
-                          className={clsx("flex flex-col gap-2", {
-                            "order-first": is_first_team,
-                            "order-last": !is_first_team,
-                          })}
-                        >
-                          {/* Lock/unlock button */}
-                          <button
-                            className={clsx(
-                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
-                              {
-                                "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
-                                  is_first_team,
-                                "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
-                                  !is_first_team,
-                              }
-                            )}
-                            onClick={(e) =>
-                              toggleManualPlacement(e, championIndex)
-                            }
-                            title={
-                              teamMember?.isManuallyPlaced
-                                ? "Unlock position (allow auto-placement)"
-                                : "Lock position (prevent auto-placement)"
-                            }
-                          >
-                            {teamMember?.isManuallyPlaced ? (
-                              <LockClosedIcon className="text-white w-5 h-5 drop-shadow-sm" />
-                            ) : (
-                              <LockOpenIcon className="text-white w-5 h-5 drop-shadow-sm" />
-                            )}
-                          </button>
+                      {/* Control buttons with team-specific positioning */}
+                      <div
+                        className={clsx("flex flex-col gap-2", {
+                          "order-first": is_first_team,
+                          "order-last": !is_first_team,
+                        })}
+                      >
+                        {/* Lock/unlock button with tooltip */}
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                className={clsx(
+                                  "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
+                                  {
+                                    "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
+                                      is_first_team,
+                                    "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
+                                      !is_first_team,
+                                  }
+                                )}
+                                onClick={(e) =>
+                                  toggleManualPlacement(e, championIndex)
+                                }
+                              >
+                                {teamMember?.isManuallyPlaced ? (
+                                  <LockClosedIcon className="text-white w-5 h-5 drop-shadow-sm" />
+                                ) : (
+                                  <LockOpenIcon className="text-white w-5 h-5 drop-shadow-sm" />
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              {teamMember?.isManuallyPlaced
+                                ? "Unlock position (allows automatic reassignment)"
+                                : "Lock position (prevents automatic reassignment)"}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
 
-                          {/* Delete button */}
-                          <button
-                            className={clsx(
-                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
-                              {
-                                "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
-                                  is_first_team,
-                                "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
-                                  !is_first_team,
-                              }
-                            )}
-                            onClick={(e) => handleDelete(e, championIndex)}
-                            title="Remove champion"
-                          >
-                            <Trash2
-                              size={20}
-                              className="text-white drop-shadow-sm"
-                            />
-                          </button>
-                        </div>
+                        {/* Delete button with tooltip */}
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                className={clsx(
+                                  "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
+                                  {
+                                    "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
+                                      is_first_team,
+                                    "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
+                                      !is_first_team,
+                                  }
+                                )}
+                                onClick={(e) => handleDelete(e, championIndex)}
+                              >
+                                <Trash2
+                                  size={20}
+                                  className="text-white drop-shadow-sm"
+                                />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              Remove champion
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
 
-                        {/* Champion icon - now with its own hover effects */}
-                        <div
-                          className={clsx(
-                            "cursor-pointer transition-transform",
-                            "hover:bg-white/5 hover:scale-110",
-                            // Selected state using team colors
-                            {
-                              "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]":
-                                isSelected,
-                            },
-                            // Team-specific colors when selected
-                            {
-                              "from-blue-500/20 to-blue-600/10 shadow-blue-500":
-                                isSelected && is_first_team,
-                              "from-red-500/20 to-red-600/10 shadow-red-500":
-                                isSelected && !is_first_team,
-                            }
-                          )}
-                          onClick={() => handleSpotClick(championIndex)}
-                          onContextMenu={(e) =>
-                            handleContextMenu(e, championIndex)
+                      {/* Champion icon - now with its own hover effects */}
+                      <div
+                        className={clsx(
+                          "cursor-pointer transition-transform",
+                          "hover:bg-white/5 hover:scale-110",
+                          // Selected state using team colors
+                          {
+                            "bg-gradient-to-r shadow-[0_0_0_2px,0_0_15px_rgba(0,0,0,0.3)]":
+                              isSelected,
+                          },
+                          // Team-specific colors when selected
+                          {
+                            "from-blue-500/20 to-blue-600/10 shadow-blue-500":
+                              isSelected && is_first_team,
+                            "from-red-500/20 to-red-600/10 shadow-red-500":
+                              isSelected && !is_first_team,
                           }
-                        >
-                          <ImageComponent
-                            src={`/icons/champions/${teamMember.icon}`}
-                            alt={teamMember.name}
-                            className="block"
-                            width={80}
-                            height={80}
-                          />
-                        </div>
+                        )}
+                        onClick={() => handleSpotClick(championIndex)}
+                        onContextMenu={(e) =>
+                          handleContextMenu(e, championIndex)
+                        }
+                      >
+                        <ImageComponent
+                          src={`/icons/champions/${teamMember.icon}`}
+                          alt={teamMember.name}
+                          className="block"
+                          width={80}
+                          height={80}
+                        />
                       </div>
                     </div>
                   </div>
