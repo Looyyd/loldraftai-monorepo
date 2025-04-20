@@ -158,11 +158,11 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                           {/* Lock/unlock button */}
                           <button
                             className={clsx(
-                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center",
+                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
                               {
-                                "bg-blue-400 hover:bg-blue-300 hover:scale-110":
+                                "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
                                   is_first_team,
-                                "bg-red-400 hover:bg-red-300 hover:scale-110":
+                                "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
                                   !is_first_team,
                               }
                             )}
@@ -176,27 +176,30 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                             }
                           >
                             {teamMember?.isManuallyPlaced ? (
-                              <LockClosedIcon className="text-white w-5 h-5" />
+                              <LockClosedIcon className="text-white w-5 h-5 drop-shadow-sm" />
                             ) : (
-                              <LockOpenIcon className="text-white w-5 h-5" />
+                              <LockOpenIcon className="text-white w-5 h-5 drop-shadow-sm" />
                             )}
                           </button>
 
                           {/* Delete button */}
                           <button
                             className={clsx(
-                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center",
+                              "p-1.5 rounded transition-all w-8 h-8 flex items-center justify-center shadow-sm",
                               {
-                                "bg-blue-400 hover:bg-blue-300 hover:scale-110":
+                                "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:scale-110":
                                   is_first_team,
-                                "bg-red-400 hover:bg-red-300 hover:scale-110":
+                                "bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 hover:scale-110":
                                   !is_first_team,
                               }
                             )}
                             onClick={(e) => handleDelete(e, championIndex)}
                             title="Remove champion"
                           >
-                            <Trash2 size={20} className="text-white" />
+                            <Trash2
+                              size={20}
+                              className="text-white drop-shadow-sm"
+                            />
                           </button>
                         </div>
 
