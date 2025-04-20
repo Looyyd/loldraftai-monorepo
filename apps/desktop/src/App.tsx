@@ -404,6 +404,7 @@ function App() {
                       handleDeleteChampion(index, teamOne)
                     }
                     onSpotSelected={handleSpotSelected}
+                    setTeam={setTeamOne}
                     ImageComponent={PlainImage}
                   />
                 </div>
@@ -427,6 +428,7 @@ function App() {
                       handleDeleteChampion(index, teamTwo)
                     }
                     onSpotSelected={handleSpotSelected}
+                    setTeam={setTeamTwo}
                     ImageComponent={PlainImage}
                   />
                 </div>

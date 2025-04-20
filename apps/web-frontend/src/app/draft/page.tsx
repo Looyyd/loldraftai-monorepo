@@ -227,6 +227,7 @@ export default function Draft() {
                   }
                   selectedSpot={selectedSpot}
                   onSpotSelected={handleSpotSelection}
+                  setTeam={setTeamOne}
                 />
               </div>
 
@@ -250,6 +251,7 @@ export default function Draft() {
                   }
                   selectedSpot={selectedSpot}
                   onSpotSelected={handleSpotSelection}
+                  setTeam={setTeamTwo}
                 />
               </div>
             </div>

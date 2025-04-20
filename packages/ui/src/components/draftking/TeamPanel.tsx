@@ -1,5 +1,7 @@
 import React from "react";
 import clsx from "clsx";
+import { Lock, Unlock, LockOpen, Trash2 } from "lucide-react";
+import { LockClosedIcon, LockOpenIcon } from "@heroicons/react/24/solid";
 import type {
   Team,
   ChampionIndex,
@@ -14,6 +16,7 @@ interface TeamPanelProps {
   onDeleteChampion: (index: ChampionIndex) => void;
   selectedSpot: SelectedSpot | null;
   onSpotSelected: (index: ChampionIndex, team: TeamIndex) => void;
+  setTeam: (team: Team) => void;
   ImageComponent: ImageComponent;
 }
 
@@ -39,6 +42,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
   onDeleteChampion,
   selectedSpot,
   onSpotSelected,
+  setTeam,
   ImageComponent,
 }) => {
   const pannelTeamIndex = is_first_team ? 1 : 2;
@@ -55,9 +59,38 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
     onDeleteChampion(championIndex);
   };
 
+  const toggleManualPlacement = (
+    event: React.MouseEvent,
+    championIndex: ChampionIndex
+  ) => {
+    event.stopPropagation(); // Prevent triggering spot selection
+
+    // Get the champion at this index
+    const champion = team[championIndex];
+    if (!champion) return;
+
+    // Create a new team with the updated champion
+    const newTeam = { ...team };
+    newTeam[championIndex] = {
+      ...champion,
+      isManuallyPlaced: !champion.isManuallyPlaced,
+    };
+
+    // Update the team
+    setTeam(newTeam);
+  };
+
+  const handleDelete = (
+    event: React.MouseEvent,
+    championIndex: ChampionIndex
+  ) => {
+    event.stopPropagation(); // Prevent triggering spot selection
+    onDeleteChampion(championIndex);
+  };
+
   return (
     <div
-      className={clsx("flex flex-col h-full rounded", {
+      className={clsx("flex flex-col h-full rounded w-[calc(100%+20px)]", {
         "bg-blue-900": is_first_team,
         "bg-red-900": !is_first_team,
       })}
@@ -103,7 +136,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                   }
                 >
                   <div
-                    className={clsx("flex items-center ", {
+                    className={clsx("flex items-center", {
                       "flex-row": is_first_team,
                       "flex-row-reverse": !is_first_team,
                     })}
@@ -116,7 +149,56 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                         height={80}
                       />
                     ) : (
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-3">
+                        {/* Control buttons with team-specific positioning */}
+                        <div
+                          className={clsx("flex flex-col gap-2", {
+                            "order-first": is_first_team,
+                            "order-last": !is_first_team,
+                          })}
+                        >
+                          {/* Lock/unlock button */}
+                          <button
+                            className={clsx(
+                              "p-1.5 rounded transition-colors w-8 h-8 flex items-center justify-center",
+                              {
+                                "bg-blue-400 hover:bg-blue-300": is_first_team,
+                                "bg-red-400 hover:bg-red-300": !is_first_team,
+                              }
+                            )}
+                            onClick={(e) =>
+                              toggleManualPlacement(e, championIndex)
+                            }
+                            title={
+                              teamMember?.isManuallyPlaced
+                                ? "Unlock position (allow auto-placement)"
+                                : "Lock position (prevent auto-placement)"
+                            }
+                          >
+                            {teamMember?.isManuallyPlaced ? (
+                              <LockClosedIcon className="text-white w-5 h-5" />
+                            ) : (
+                              <LockOpenIcon className="text-white w-5 h-5" />
+                            )}
+                          </button>
+
+                          {/* Delete button */}
+                          <button
+                            className={clsx(
+                              "p-1.5 rounded transition-colors w-8 h-8 flex items-center justify-center",
+                              {
+                                "bg-blue-400 hover:bg-blue-300": is_first_team,
+                                "bg-red-400 hover:bg-red-300": !is_first_team,
+                              }
+                            )}
+                            onClick={(e) => handleDelete(e, championIndex)}
+                            title="Remove champion"
+                          >
+                            <Trash2 size={20} className="text-white" />
+                          </button>
+                        </div>
+
+                        {/* Champion icon */}
                         <ImageComponent
                           src={`/icons/champions/${teamMember.icon}`}
                           alt={teamMember.name}

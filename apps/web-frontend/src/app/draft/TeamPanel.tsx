@@ -7,12 +7,14 @@ import type {
 } from "@draftking/ui/lib/types";
 import type { ImageComponent } from "@draftking/ui/lib/types";
 import CloudFlareImage from "@/components/CloudFlareImage";
+
 interface TeamPanelProps {
   team: Team;
   is_first_team: boolean;
   onDeleteChampion: (index: ChampionIndex) => void;
   selectedSpot: SelectedSpot | null;
   onSpotSelected: (index: ChampionIndex, team: TeamIndex) => void;
+  setTeam: (team: Team) => void;
 }
 
 const TeamPanel: React.FC<TeamPanelProps> = (props) => {
