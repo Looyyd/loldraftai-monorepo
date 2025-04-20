@@ -229,7 +229,7 @@ export function addChampion(
         ) as keyof PlayRates;
 
         const rates = playRatesMap.get(champ.id);
-        const roleRate = rates ? rates[role] : 0.01; // Default to low probability if no data
+        const roleRate = rates ? rates[role] : 0.001; // Default to low probability if no data
         probability *= roleRate;
       }
 
