@@ -207,7 +207,6 @@ function App() {
           );
           if (!champion) continue;
 
-          const targetTeam = player.team === 1 ? newTeamOne : newTeamTwo;
           const forcedDraftOrder =
             player.team === 1 ? "Blue then Red" : "Red then Blue";
 
@@ -235,7 +234,7 @@ function App() {
               hasChanges = true;
               Object.assign(newTeamTwo, team);
             },
-            (champions) => {
+            () => {
               if (hasChanges) {
                 newlyPickedChampions.push(champion);
               }

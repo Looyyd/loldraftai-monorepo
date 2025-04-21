@@ -8,7 +8,6 @@ import type {
 } from "./types";
 import {
   getChampionPlayRates,
-  getChampionRoles,
   roleToIndexMap,
   type PlayRates,
 } from "./champions";
@@ -201,9 +200,6 @@ export function addChampion(
   }
 
   // Separate manually placed champions from those we can reassign
-  const manuallyPlacedChampions: Champion[] = allChampions.filter(
-    (c) => c.isManuallyPlaced
-  );
   const reassignableChampions: Champion[] = allChampions.filter(
     (c) => !c.isManuallyPlaced
   );
