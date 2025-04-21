@@ -29,7 +29,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({
           <p className="flex items-center">
             <CursorArrowRaysIcon className="mr-2 h-6 w-6 flex-shrink-0" />
             <span className="flex-grow">
-              Click on a champion to add them to a team
+              Click on a champion to add them to a team. Teams will be
+              automatically reassigned to the most likely champion/role
+              combination. Use the lock button to prevent automatic
+              reassignments
             </span>
           </p>
           <p className="flex items-center">
@@ -42,8 +45,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({
           <p className="flex items-center">
             <TrashIcon className="mr-2 h-6 w-6 flex-shrink-0" />
             <span className="flex-grow">
-              Right-click on a champion in team panels to remove them from the
-              team
+              Click the bin icon or right-click on a champion in team panels to
+              remove them from the team
             </span>
           </p>
           <p className="flex items-center">
