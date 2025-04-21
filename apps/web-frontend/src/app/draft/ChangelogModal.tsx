@@ -22,18 +22,23 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <InfoIcon className="h-5 w-5" />
-            Model Update
+            UI Update
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-sm leading-relaxed">
-              Draft analysis now shows the winrate of a team over game duration.
-              This gives a picture of a team&apos;s power spikes.
+              When adding a champion to a team, all champions will now be
+              reassigned to get the most likely team combination. To avoid
+              reassignment on a champion, use the lock button.
             </p>
             <p className="text-sm leading-relaxed">
-              Elo rating config has been expanded to include Platinum, Gold and
-              Silver tiers.
+              This also works when live tracking in the desktop app.
+            </p>
+            <p className="text-sm leading-relaxed">
+              Example: You have a Cho&apos;Gath Top, but now you add Renekton to
+              the team. The most likely combination is now Cho&apos;Gath Mid and
+              Renekton Top, so champions will be assigned to these roles.
             </p>
           </div>
         </div>
