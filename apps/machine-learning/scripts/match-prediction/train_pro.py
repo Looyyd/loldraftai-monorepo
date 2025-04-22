@@ -79,13 +79,13 @@ class FineTuningConfig:
 
     def __init__(self):
         # Fine-tuning hyperparameters - edit these directly instead of using command line flags
-        self.num_epochs = 400
-        # TODO: try even lower? oriignal is 8e-4 right now
-        self.learning_rate = 5e-5  # Lower learning rate for fine-tuning
+        self.num_epochs = 1000
+        # TODO: try even lower? original is 8e-4 right now
+        self.learning_rate = 1.6e-5  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
         self.batch_size = 1024
-        self.original_batch_size = 1024 * 15
+        self.original_batch_size = 0
         self.val_split = 0.2
         self.max_grad_norm = 1.0
         self.log_wandb = True
@@ -93,7 +93,7 @@ class FineTuningConfig:
 
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
-        self.epochs_per_unfreeze = 40
+        self.epochs_per_unfreeze = 400
         self.initial_frozen_layers = 4
 
         # Data augmentation options
@@ -198,7 +198,7 @@ class ProMatchDataset(Dataset):
             self.patch_mapping[get_patch_from_raw_data(row)], dtype=torch.long
         )
 
-        features["queue_type"] = torch.tensor(PRO_QUEUE_INDEX, dtype=torch.long)
+        features["queue_type"] = torch.tensor(RANKED_QUEUE_INDEX, dtype=torch.long)
         # Add numerical_elo = 0 for pro games (highest skill level)
         # TODO: could have a new elo as well
         features["elo"] = torch.tensor(0.0, dtype=torch.long)
@@ -426,14 +426,7 @@ def create_dataloaders(
         use_label_smoothing=False,
     )
 
-    # Create original dataset (using only fine-tune tasks)
-    # Use full dataset for training but fraction for validation
-    train_original_dataset = MatchDataset(
-        train_or_test="train", dataset_fraction=1.0  # Use full dataset for training
-    )
-    val_original_dataset = MatchDataset(train_or_test="test", dataset_fraction=0.01)
-
-    # Create individual dataloaders
+    # Create pro dataloaders
     train_pro_loader = DataLoader(
         train_pro_dataset,
         batch_size=config.batch_size,
@@ -442,22 +435,6 @@ def create_dataloaders(
         collate_fn=pro_collate_fn,
     )
 
-    # TODO: add prefetch factor
-    train_original_loader = DataLoader(
-        train_original_dataset,
-        batch_size=config.original_batch_size,
-        collate_fn=collate_fn,
-        drop_last=True,
-        **dataloader_config,
-    )
-
-    # Create mixed training loader
-    train_loader = MixedDataLoader(
-        train_original_loader,
-        train_pro_loader,
-    )
-
-    # For validation, we'll keep separate loaders
     val_pro_loader = DataLoader(
         val_pro_dataset,
         batch_size=config.batch_size,
@@ -465,12 +442,42 @@ def create_dataloaders(
         collate_fn=pro_collate_fn,
     )
 
-    val_original_loader = DataLoader(
-        val_original_dataset,
-        batch_size=config.batch_size,
-        collate_fn=collate_fn,
-        **dataloader_config,
-    )
+    # Check if we should use original data
+    if config.original_batch_size > 0:
+        # Create original dataset (using only fine-tune tasks)
+        # Use full dataset for training but fraction for validation
+        train_original_dataset = MatchDataset(
+            train_or_test="train", dataset_fraction=1.0  # Use full dataset for training
+        )
+        val_original_dataset = MatchDataset(train_or_test="test", dataset_fraction=0.01)
+
+        # Create original dataloaders
+        train_original_loader = DataLoader(
+            train_original_dataset,
+            batch_size=config.original_batch_size,
+            collate_fn=collate_fn,
+            drop_last=True,
+            **dataloader_config,
+        )
+
+        val_original_loader = DataLoader(
+            val_original_dataset,
+            batch_size=config.batch_size,
+            collate_fn=collate_fn,
+            **dataloader_config,
+        )
+
+        # Create mixed training loader
+        train_loader = MixedDataLoader(
+            train_original_loader,
+            train_pro_loader,
+        )
+    else:
+        # If original_batch_size is 0, use only pro data
+        print("Using only pro data for training (original_batch_size = 0)")
+        train_loader = train_pro_loader
+        # Create a dummy original loader for validation
+        val_original_loader = None
 
     return train_loader, val_pro_loader, val_original_loader
 
@@ -535,8 +542,9 @@ def fine_tune_model(
     model.patch_embedding.requires_grad_(False)
     model.champion_patch_embedding.requires_grad_(False)
     for name, embedding in model.embeddings.items():
-        if name != "queue_type":
-            embedding.requires_grad_(False)
+        embedding.requires_grad_(False)
+        # if name != "queue_type":
+        # embedding.requires_grad_(False)
 
     # Freeze early MLP layers
     print(f"Freezing first {finetune_config.initial_frozen_layers} MLP layer groups...")
@@ -594,6 +602,9 @@ def fine_tune_model(
         patch_mapping,
         finetune_config,
     )
+
+    # Check if we're using only pro data
+    using_only_pro_data = finetune_config.original_batch_size == 0
 
     for epoch in range(finetune_config.num_epochs):
         epoch_start = time.time()
@@ -661,63 +672,69 @@ def fine_tune_model(
                     valid_outputs = outputs[task_name][valid_mask]
                     valid_labels = labels[task_name][valid_mask]
 
-                    # Create pro/original mask before applying output_valid_mask
-                    pro_orig_mask = (
-                        torch.arange(len(valid_mask), device=device)
-                        < finetune_config.batch_size
-                    )
-                    # Keep track of which valid samples are from pro/original data
-                    valid_pro_mask = pro_orig_mask[valid_mask]
-
                     # Additional check for NaN in outputs
                     output_valid_mask = ~torch.isnan(valid_outputs)
                     if output_valid_mask.any():
-                        # Update pro mask to account for output_valid_mask
-                        final_pro_mask = valid_pro_mask[output_valid_mask]
-
                         task_loss = task_criterion(
                             valid_outputs[output_valid_mask],
                             valid_labels[output_valid_mask],
                         )
 
-                        # Apply separate weights to pro and original losses
-                        weighted_loss_sum = 0.0
-
-                        # Apply pro weight to pro samples
-                        if final_pro_mask.any():
-                            pro_loss = task_loss[final_pro_mask].mean()
-                            weighted_pro_loss = (
-                                pro_loss * finetune_config.pro_loss_weight
-                            )
+                        if using_only_pro_data:
+                            # If using only pro data, all samples are pro samples
+                            pro_loss = task_loss.mean()
+                            weighted_loss = pro_loss * finetune_config.pro_loss_weight
                             pro_losses[task_name] = pro_loss.item()
                             pro_train_losses[task_name] += pro_loss.item()
                             pro_train_counts[task_name] += 1
-                            # Add weighted pro loss
-                            weighted_loss_sum += weighted_pro_loss
-
-                        # Apply original weight to original samples
-                        if (~final_pro_mask).any():
-                            original_loss = task_loss[~final_pro_mask].mean()
-                            weighted_original_loss = (
-                                original_loss * finetune_config.original_loss_weight
+                            batch_losses.append(weighted_loss)
+                        else:
+                            # Create pro/original mask before applying output_valid_mask
+                            pro_orig_mask = (
+                                torch.arange(len(valid_mask), device=device)
+                                < finetune_config.batch_size
                             )
-                            original_losses[task_name] = original_loss.item()
-                            original_train_losses[task_name] += original_loss.item()
-                            original_train_counts[task_name] += 1
-                            # Add weighted original loss
-                            weighted_loss_sum += weighted_original_loss
+                            # Keep track of which valid samples are from pro/original data
+                            valid_pro_mask = pro_orig_mask[valid_mask]
 
-                        # Use weighted loss - now a scalar value
-                        masked_loss = weighted_loss_sum
+                            # Update pro mask to account for output_valid_mask
+                            final_pro_mask = valid_pro_mask[output_valid_mask]
+
+                            # Apply separate weights to pro and original losses
+                            weighted_loss_sum = 0.0
+
+                            # Apply pro weight to pro samples
+                            if final_pro_mask.any():
+                                pro_loss = task_loss[final_pro_mask].mean()
+                                weighted_pro_loss = (
+                                    pro_loss * finetune_config.pro_loss_weight
+                                )
+                                pro_losses[task_name] = pro_loss.item()
+                                pro_train_losses[task_name] += pro_loss.item()
+                                pro_train_counts[task_name] += 1
+                                # Add weighted pro loss
+                                weighted_loss_sum += weighted_pro_loss
+
+                            # Apply original weight to original samples
+                            if (~final_pro_mask).any():
+                                original_loss = task_loss[~final_pro_mask].mean()
+                                weighted_original_loss = (
+                                    original_loss * finetune_config.original_loss_weight
+                                )
+                                original_losses[task_name] = original_loss.item()
+                                original_train_losses[task_name] += original_loss.item()
+                                original_train_counts[task_name] += 1
+                                # Add weighted original loss
+                                weighted_loss_sum += weighted_original_loss
+
+                            # Use weighted loss - now a scalar value
+                            batch_losses.append(weighted_loss_sum)
                     else:
                         print(f"No valid values for task {task_name}")
-                        masked_loss = torch.tensor(0.0, device=device)
+                        batch_losses.append(torch.tensor(0.0, device=device))
                 else:
                     print(f"No valid values for task {task_name}")
-                    masked_loss = torch.tensor(0.0, device=device)
-
-                batch_losses.append(masked_loss)
-                train_losses[task_name] += masked_loss.item()
+                    batch_losses.append(torch.tensor(0.0, device=device))
 
             # Combine losses with task weights
             batch_losses = torch.stack(batch_losses)
@@ -738,13 +755,14 @@ def fine_tune_model(
                     for task, loss in pro_losses.items()
                     if loss is not None
                 }
-                log_dict.update(
-                    {
-                        f"train_batch_original_loss_{task}": loss
-                        for task, loss in original_losses.items()
-                        if loss is not None
-                    }
-                )
+                if not using_only_pro_data:
+                    log_dict.update(
+                        {
+                            f"train_batch_original_loss_{task}": loss
+                            for task, loss in original_losses.items()
+                            if loss is not None
+                        }
+                    )
                 wandb.log(log_dict)
 
             # Backward pass
@@ -798,11 +816,14 @@ def fine_tune_model(
                     f"train_pro_loss_{task}": loss
                     for task, loss in avg_pro_train_losses.items()
                 },
-                **{
-                    f"train_original_loss_{task}": loss
-                    for task, loss in avg_original_train_losses.items()
-                },
             }
+            if not using_only_pro_data:
+                log_dict.update(
+                    {
+                        f"train_original_loss_{task}": loss
+                        for task, loss in avg_original_train_losses.items()
+                    }
+                )
             wandb.log(log_dict)
 
         # Print progress
@@ -824,7 +845,7 @@ def fine_tune_model(
 def validate(
     model: Model,
     val_pro_loader: DataLoader,
-    val_original_loader: DataLoader,
+    val_original_loader: Optional[DataLoader],
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
@@ -840,10 +861,14 @@ def validate(
 
     # Add accuracy accumulator for win_prediction
     pro_win_accuracy = torch.zeros(2, device=device)
-    original_accumulators = {
-        task_name: torch.zeros(2, device=device) for task_name in enabled_tasks.keys()
-    }
-    original_win_accuracy = torch.zeros(2, device=device)
+
+    # Only initialize original accumulators if we have original data
+    if val_original_loader is not None:
+        original_accumulators = {
+            task_name: torch.zeros(2, device=device)
+            for task_name in enabled_tasks.keys()
+        }
+        original_win_accuracy = torch.zeros(2, device=device)
 
     with torch.no_grad():
         # Validate on pro data
@@ -858,7 +883,7 @@ def validate(
         wandb.log(pro_metrics)
 
         # don't validate on every epoch, it's slow
-        if epoch % 50 == 0:
+        if epoch % 50 == 0 and val_original_loader is not None:
             original_metrics = validate_loader(
                 model=model,
                 loader=val_original_loader,
