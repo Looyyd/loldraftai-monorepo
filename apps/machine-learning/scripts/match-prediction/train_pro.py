@@ -62,7 +62,7 @@ FINE_TUNE_TASKS = {
     "win_prediction_25_30": TaskDefinition(
         name="win_prediction_25_30",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.03,
+        weight=0.01,  # tends to overfit
     ),
     "win_prediction_30_35": TaskDefinition(
         name="win_prediction_30_35",
@@ -72,7 +72,7 @@ FINE_TUNE_TASKS = {
     "win_prediction_35_inf": TaskDefinition(
         name="win_prediction_35_inf",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.03,
+        weight=0.01,  # tends to overfit
     ),
 }
 
@@ -83,7 +83,7 @@ for position in POSITIONS:
         FINE_TUNE_TASKS[task_name] = TaskDefinition(
             name=task_name,
             task_type=TaskType.REGRESSION,
-            weight=0.01
+            weight=0.02
             / (len(POSITIONS) * len(TEAMS)),  # Same weight as in final_tasks
         )
 
