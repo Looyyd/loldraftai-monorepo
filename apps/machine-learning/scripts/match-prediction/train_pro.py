@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 import time
 import copy
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Callable
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 import torch.nn as nn
@@ -28,6 +28,9 @@ from utils.match_prediction import (
     POSITIONS,
     TEAMS,
 )
+
+from utils.match_prediction.train_utils import get_num_champions
+
 from utils.match_prediction.match_dataset import MatchDataset, dataloader_config
 from utils.match_prediction.model import Model
 from utils.match_prediction.train_utils import (
@@ -114,6 +117,7 @@ class FineTuningConfig:
         self.log_wandb = True
         self.save_checkpoints = False
         self.debug = False
+        self.validation_interval = 1
 
         # Add new unfreezing parameters
         self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
@@ -151,6 +155,8 @@ class ProMatchDataset(Dataset):
         smooth_low: float = 0.1,
         smooth_high: float = 0.9,
         seed: int = 42,
+        masking_function: Optional[Callable[[], int]] = None,
+        unknown_champion_id: Optional[int] = None,
     ):
         with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
             self.champion_id_encoder = pickle.load(f)["mapping"]
@@ -178,19 +184,48 @@ class ProMatchDataset(Dataset):
         self.use_label_smoothing = use_label_smoothing
         self.smooth_low = smooth_low
         self.smooth_high = smooth_high
+        self.masking_function = masking_function
+        self.unknown_champion_id = unknown_champion_id
 
     def __len__(self):
         return len(self.df)
 
+    def _mask_champions(self, champion_list: List[int], num_to_mask: int) -> List[int]:
+        """Masks a specific number of champions in the list with unknown_champion_id
+        
+        Args:
+            champion_list: List of already encoded champion IDs
+            num_to_mask: Number of champions to mask
+        """
+        if num_to_mask == 0:
+            return champion_list
+        mask_indices = np.random.choice(
+            len(champion_list), size=num_to_mask, replace=False
+        )
+        return [
+            self.unknown_champion_id if i in mask_indices else ch_id
+            for i, ch_id in enumerate(champion_list)
+        ]
+
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-
         features = {}
 
-        # Process champion IDs
+        # Process champion IDs with masking if enabled
         try:
             champion_ids = self._get_champion_ids(row)
+            # First encode the original champion IDs
             encoded_champs = self.champion_id_encoder.transform(champion_ids)
+            
+            # Then apply masking to the encoded values if needed
+            if (
+                self.masking_function is not None
+                and self.unknown_champion_id is not None
+            ):
+                encoded_champs = self._mask_champions(
+                    encoded_champs.tolist(), self.masking_function()
+                )
+            
             features["champion_ids"] = torch.tensor(encoded_champs, dtype=torch.long)
         except Exception as e:
             print(f"ERROR processing champion IDs for row {idx}: {e}")
@@ -290,6 +325,11 @@ def filter_pro_games(pro_games_df: pd.DataFrame, patch_mapping: Dict[str, int]):
     """
     original_count = len(pro_games_df)
 
+    # Load champion encoder to check valid champion IDs
+    with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
+        champion_id_mapping = pickle.load(f)["mapping"]
+    valid_champion_ids = set(str(id) for id in champion_id_mapping.classes_)
+
     # Convert patch mapping keys to version strings for better readability
     patches = sorted(patch_mapping.keys())
 
@@ -302,10 +342,13 @@ def filter_pro_games(pro_games_df: pd.DataFrame, patch_mapping: Dict[str, int]):
         patch_str = get_patch_from_raw_data(row)
         # Check patch compatibility
         patch_compatible = patch_str in patches
+
         # Check champion IDs validity
+        champion_ids = [str(champ_id) for champ_id in row["champion_ids"].tolist()]
         champ_compatible = (
-            isinstance(row["champion_ids"].tolist(), list)
-            and len(row["champion_ids"].tolist()) == 10
+            isinstance(champion_ids, list)
+            and len(champion_ids) == 10
+            and all(champ_id in valid_champion_ids for champ_id in champion_ids)
         )
 
         if patch_compatible and champ_compatible:
@@ -651,6 +694,9 @@ def fine_tune_model(
     # Check if we're using only pro data
     using_only_pro_data = finetune_config.original_batch_size == 0
 
+    # Get unknown champion ID for masking using the utility function
+    _, unknown_champion_id = get_num_champions()
+
     for epoch in range(finetune_config.num_epochs):
         epoch_start = time.time()
 
@@ -839,10 +885,11 @@ def fine_tune_model(
         val_metrics = validate(
             model, val_pro_loader, val_original_loader, finetune_config, device, epoch
         )
+        val_loss = val_metrics["val_pro_avg_loss"]
 
         # Save best model based on validation loss
-        if val_metrics["val_pro_avg_loss"] < best_metric:
-            best_metric = val_metrics["val_pro_avg_loss"]
+        if val_loss < best_metric:
+            best_metric = val_loss
             if not finetune_config.debug:
                 best_model_state = copy.deepcopy(model.state_dict())
                 best_model_path = output_model_path.replace(".pth", "_best.pth")
@@ -860,7 +907,7 @@ def fine_tune_model(
             wandb.log(
                 {
                     "epoch": epoch + 1,
-                    "val_pro_loss": val_metrics["val_pro_avg_loss"],
+                    "val_pro_loss": val_loss,
                     "val_pro_win_accuracy": val_metrics.get(
                         "val_pro_win_prediction_accuracy", 0
                     ),
@@ -873,6 +920,40 @@ def fine_tune_model(
                     },
                 }
             )
+
+        # Only run validation on specified intervals
+        if (epoch + 1) % finetune_config.validation_interval == 0:
+            # Regular validation
+            val_metrics = validate(
+                model,
+                val_pro_loader,
+                val_original_loader,
+                finetune_config,
+                device,
+                epoch,
+            )
+            val_loss = val_metrics["val_pro_avg_loss"]
+
+            # Masked validation with different masking levels
+            masked_metrics = validate_with_masking_levels(
+                model=model,
+                pro_games_df=pro_games_df,
+                patch_mapping=patch_mapping,
+                config=finetune_config,
+                device=device,
+                epoch=epoch,
+            )
+
+            # Log all metrics
+            if finetune_config.log_wandb:
+                wandb.log(
+                    {
+                        "epoch": epoch + 1,
+                        "val_loss": val_loss,
+                        **{f"val_{k}": v for k, v in val_metrics.items()},
+                        **masked_metrics,
+                    }
+                )
 
         epoch_time = time.time() - epoch_start
 
@@ -1056,6 +1137,72 @@ def validate_loader(
         metrics[f"{prefix}_avg_loss"] = float("inf")
 
     return metrics
+
+
+def validate_with_masking_levels(
+    model: Model,
+    pro_games_df: pd.DataFrame,
+    patch_mapping: Dict[str, int],
+    config: FineTuningConfig,
+    device: torch.device,
+    epoch: int,
+) -> Dict[str, float]:
+    """
+    Validate the model with different numbers of masked champions
+    Returns a dictionary of metrics for each masking level
+    """
+    all_metrics = {}
+
+    # Get num_champions and unknown_champion_id using the utility function
+    _, unknown_champion_id = get_num_champions()
+
+    # Test with different numbers of masked champions
+    for num_masked in range(11):  # 0 to 10 masked champions
+        print(f"\nValidating with {num_masked} masked champions...")
+
+        # Create dataset with specific number of masked champions
+        val_masked_dataset = ProMatchDataset(
+            pro_games_df=pro_games_df,
+            patch_mapping=patch_mapping,
+            train_or_test="test",
+            val_split=config.val_split,
+            use_label_smoothing=False,
+            masking_function=lambda: num_masked,  # Always mask exactly num_masked champions
+            unknown_champion_id=unknown_champion_id,
+        )
+
+        val_masked_loader = DataLoader(
+            val_masked_dataset,
+            batch_size=config.batch_size,
+            shuffle=False,
+            collate_fn=pro_collate_fn,
+        )
+
+        # Run validation
+        metrics = validate(
+            model=model,
+            val_pro_loader=val_masked_loader,
+            val_original_loader=None,  # No original loader needed for masked validation
+            config=config,
+            device=device,
+            epoch=epoch,
+        )
+
+        # Add prefix to metrics
+        masked_metrics = {f"val_masked_{num_masked}_{k}": v for k, v in metrics.items()}
+        all_metrics.update(masked_metrics)
+
+        # Print some key metrics
+        if "win_prediction" in metrics:
+            print(
+                f"Win prediction loss with {num_masked} masked: {metrics['win_prediction']:.4f}"
+            )
+        if "win_prediction_accuracy" in metrics:
+            print(
+                f"Win prediction accuracy with {num_masked} masked: {metrics['win_prediction_accuracy']:.4f}"
+            )
+
+    return all_metrics
 
 
 def main():
