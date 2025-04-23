@@ -47,23 +47,51 @@ from utils.match_prediction.task_definitions import (
     TaskType,
 )
 
-# Attempting to finetune on multiple tasks, could perhaps make the model "understand" the domain adaptations better
-# (for example, pro games have less drastic gold leads and less kills)
+# Modify FINE_TUNE_TASKS to include all tasks from get_final_tasks()
 FINE_TUNE_TASKS = {
     "win_prediction": TaskDefinition(
         name="win_prediction",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=1,
+        weight=0.9,
+    ),
+    # Add win prediction tasks based on game duration buckets
+    "win_prediction_0_25": TaskDefinition(
+        name="win_prediction_0_25",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_25_30": TaskDefinition(
+        name="win_prediction_25_30",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_30_35": TaskDefinition(
+        name="win_prediction_30_35",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_35_inf": TaskDefinition(
+        name="win_prediction_35_inf",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
     ),
 }
 
-FINE_TUNE_TASKS_LAST_EPOCHS = {
-    "win_prediction": TaskDefinition(
-        name="win_prediction",
-        task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=1,
-    ),
-}
+# Add gold tasks for all positions and teams
+gold_tasks_count = len(POSITIONS) * len(TEAMS)  # 5 positions * 2 teams = 10 tasks
+gold_task_weight = 0.01 / gold_tasks_count
+
+for position in POSITIONS:
+    for team_id in TEAMS:
+        task_name = f"team_{team_id}_{position}_totalGold_at_900000"
+        FINE_TUNE_TASKS[task_name] = TaskDefinition(
+            name=task_name,
+            task_type=TaskType.REGRESSION,
+            weight=gold_task_weight,
+        )
+
+# Use the same tasks for the last epochs
+FINE_TUNE_TASKS_LAST_EPOCHS = FINE_TUNE_TASKS.copy()
 
 
 # in this file we get from a row, so it's different from column_definitions.py
@@ -168,6 +196,18 @@ class ProMatchDataset(Dataset):
             "win_prediction": lambda x: 1.0 - x,
         }
 
+        # Add symmetry transformations for totalGold
+        for position in POSITIONS:
+            for team_id in TEAMS:
+                blue_task = f"team_100_{position}_totalGold_at_900000"
+                red_task = f"team_200_{position}_totalGold_at_900000"
+                self.task_symmetry[blue_task] = lambda x, rt=red_task: self.df.iloc[0][
+                    rt
+                ]
+                self.task_symmetry[red_task] = lambda x, bt=blue_task: self.df.iloc[0][
+                    bt
+                ]
+
     def __len__(self):
         return len(self.df) * (2 if self.use_team_symmetry else 1)
 
@@ -200,9 +240,8 @@ class ProMatchDataset(Dataset):
             self.patch_mapping[get_patch_from_raw_data(row)], dtype=torch.long
         )
 
-        features["queue_type"] = torch.tensor(RANKED_QUEUE_INDEX, dtype=torch.long)
+        features["queue_type"] = torch.tensor(PRO_QUEUE_INDEX, dtype=torch.long)
         # Add numerical_elo = 0 for pro games (highest skill level)
-        # TODO: could have a new elo as well
         features["elo"] = torch.tensor(0.0, dtype=torch.long)
 
         # Calculate and normalize task values
@@ -217,6 +256,74 @@ class ProMatchDataset(Dataset):
                 self.smooth_low if win_prediction == 0 else self.smooth_high
             )
         labels["win_prediction"] = torch.tensor(win_prediction, dtype=torch.float32)
+        
+        # Game duration and bucketed win predictions based on game duration
+        game_duration_seconds = row["gameDuration"]
+        
+        # Store raw game duration for bucketing
+        labels["gameDuration_raw"] = torch.tensor(game_duration_seconds, dtype=torch.float32)
+        
+        # Normalize game duration using task statistics
+        game_duration_normalized = (game_duration_seconds - self.task_means["gameDuration"]) / self.task_stds["gameDuration"]
+        labels["gameDuration"] = torch.tensor(game_duration_normalized, dtype=torch.float32)
+        
+        # Add bucketed win predictions based on game duration
+        duration_minutes = game_duration_seconds / 60
+        
+        if duration_minutes < 25:
+            labels["win_prediction_0_25"] = labels["win_prediction"]
+            labels["win_prediction_25_30"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_30_35"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_35_inf"] = torch.tensor(float('nan'), dtype=torch.float32)
+        elif duration_minutes < 30:
+            labels["win_prediction_0_25"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_25_30"] = labels["win_prediction"]
+            labels["win_prediction_30_35"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_35_inf"] = torch.tensor(float('nan'), dtype=torch.float32)
+        elif duration_minutes < 35:
+            labels["win_prediction_0_25"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_25_30"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_30_35"] = labels["win_prediction"]
+            labels["win_prediction_35_inf"] = torch.tensor(float('nan'), dtype=torch.float32)
+        else:
+            labels["win_prediction_0_25"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_25_30"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_30_35"] = torch.tensor(float('nan'), dtype=torch.float32)
+            labels["win_prediction_35_inf"] = labels["win_prediction"]
+        
+        # Gold tasks for each position and team
+        for position in POSITIONS:
+            for team_id in TEAMS:
+                task_name = f"team_{team_id}_{position}_totalGold_at_900000"
+                
+                # Skip if the column doesn't exist in row
+                if task_name not in row:
+                    continue
+                
+                value = float(row[task_name])
+                
+                # Apply symmetry if needed
+                if use_symmetry:
+                    if team_id == "100":
+                        other_team = "200"
+                        swapped_task = f"team_{other_team}_{position}_totalGold_at_900000"
+                        if swapped_task in row:
+                            value = float(row[swapped_task])
+                    else:  # team_id == "200"
+                        other_team = "100"
+                        swapped_task = f"team_{other_team}_{position}_totalGold_at_900000"
+                        if swapped_task in row:
+                            value = float(row[swapped_task])
+                
+                # Normalize using task statistics
+                if task_name in self.task_means and task_name in self.task_stds:
+                    normalized_value = (value - self.task_means[task_name]) / self.task_stds[task_name]
+                    labels[task_name] = torch.tensor(normalized_value, dtype=torch.float32)
+                else:
+                    # If we don't have stats for this task, skip normalization
+                    # This might happen if this particular task wasn't in the original dataset
+                    print(f"Warning: No normalization stats for {task_name}. Using raw value.")
+                    labels[task_name] = torch.tensor(value / 10000.0, dtype=torch.float32)  # Simple scaling
 
         return features, labels
 
@@ -387,11 +494,18 @@ class MixedDataLoader:
                     [finetune_features[key], original_features[key]]
                 )
 
-            # Only include fine-tune tasks in labels
+            # Include all fine-tune tasks in labels
             for key in FINE_TUNE_TASKS:
-                combined_labels[key] = torch.cat(
-                    [finetune_labels[key], original_labels[key]]
-                )
+                if key in finetune_labels and key in original_labels:
+                    combined_labels[key] = torch.cat(
+                        [finetune_labels[key], original_labels[key]]
+                    )
+                elif key in finetune_labels:
+                    # Handle case where the original dataset might not have this task
+                    combined_labels[key] = finetune_labels[key]
+                elif key in original_labels:
+                    # Handle case where finetune dataset might not have this task
+                    combined_labels[key] = original_labels[key]
 
             return combined_features, combined_labels
 
@@ -985,24 +1099,81 @@ def validate_loader(
 
         outputs = model(features)
 
+        # Get game duration for bucketed tasks if available
+        if "gameDuration" in labels:
+            # If we have raw gameDuration in the data
+            if "gameDuration_raw" in labels:
+                game_duration_seconds = labels["gameDuration_raw"]
+            # If we have original (non-normalized) gameDuration 
+            elif "gameDuration_original" in labels:
+                game_duration_seconds = labels["gameDuration_original"]
+            # Otherwise, we need to denormalize it using the task stats
+            else:
+                game_duration_seconds = (
+                    labels["gameDuration"] * model.task_stds["gameDuration"]
+                    + model.task_means["gameDuration"]
+                )
+
+            # Create masks for duration buckets (in minutes)
+            duration_minutes = game_duration_seconds / 60
+            masks = {
+                "0_25": duration_minutes < 25,
+                "25_30": (duration_minutes >= 25) & (duration_minutes < 30),
+                "30_35": (duration_minutes >= 30) & (duration_minutes < 35),
+                "35_inf": duration_minutes >= 35,
+            }
+        else:
+            # If gameDuration not available, use placeholder masks
+            masks = {
+                k: torch.zeros(batch_size, dtype=torch.bool, device=device)
+                for k in ["0_25", "25_30", "30_35", "35_inf"]
+            }
+
         # Calculate task losses
         batch_losses = []
         for task_name, task_def in FINE_TUNE_TASKS.items():
             if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
-                loss = nn.functional.binary_cross_entropy_with_logits(
-                    outputs[task_name], labels[task_name], reduction="none"
-                )
+                if task_name.startswith("win_prediction_"):
+                    # For bucketed tasks, only compute loss on the relevant bucket
+                    bucket = task_name.split("win_prediction_")[1]
+                    mask = masks[bucket]
+
+                    if mask.any():
+                        loss = nn.functional.binary_cross_entropy_with_logits(
+                            outputs[task_name][mask],
+                            labels["win_prediction"][mask],
+                            reduction="none",
+                        )
+                        # Update accumulators
+                        loss_sum = loss.sum()
+                        accumulators[task_name][0] += loss_sum
+                        accumulators[task_name][1] += mask.sum()
+                    else:
+                        # No games in this bucket
+                        loss = torch.tensor(0.0, device=device)
+                else:
+                    # Regular binary classification task
+                    loss = nn.functional.binary_cross_entropy_with_logits(
+                        outputs[task_name], labels[task_name], reduction="none"
+                    )
+
+                    # Update accumulators
+                    valid_mask = ~torch.isnan(labels[task_name])
+                    if valid_mask.any():
+                        loss_sum = loss[valid_mask].sum()
+                        accumulators[task_name][0] += loss_sum
+                        accumulators[task_name][1] += valid_mask.sum()
             else:  # REGRESSION
                 loss = nn.functional.mse_loss(
                     outputs[task_name], labels[task_name], reduction="none"
                 )
 
-            # Update accumulators
-            valid_mask = ~torch.isnan(labels[task_name])
-            if valid_mask.any():
-                loss_sum = loss[valid_mask].sum()
-                accumulators[task_name][0] += loss_sum
-                accumulators[task_name][1] += valid_mask.sum()
+                # Update accumulators
+                valid_mask = ~torch.isnan(labels[task_name])
+                if valid_mask.any():
+                    loss_sum = loss[valid_mask].sum()
+                    accumulators[task_name][0] += loss_sum
+                    accumulators[task_name][1] += valid_mask.sum()
 
             batch_losses.append(loss.mean())
 
