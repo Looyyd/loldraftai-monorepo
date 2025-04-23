@@ -81,7 +81,7 @@ class FineTuningConfig:
         # Fine-tuning hyperparameters - edit these directly instead of using command line flags
         self.num_epochs = 1000
         # TODO: try even lower? original is 8e-4 right now
-        self.learning_rate = 0 # 1.6e-6  # Lower learning rate for fine-tuning
+        self.learning_rate = 0  # 1.6e-6  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
         self.batch_size = 1024
@@ -504,7 +504,18 @@ def unfreeze_layer_group(model: Model, frozen_layers: int) -> int:
         f"{[mlp_layers[base_index + i] for i in range(4)]}"
     )
 
+    # Add this line to ensure BatchNorm layers stay frozen
+    model.apply(freeze_bn)
+
     return frozen_layers - 1
+
+
+def freeze_bn(module):
+    """Helper function to freeze batch norm layers"""
+    if isinstance(module, nn.BatchNorm1d):
+        module.eval()  # Set to evaluation mode
+        module.weight.requires_grad_(False)
+        module.bias.requires_grad_(False)
 
 
 def fine_tune_model(
@@ -555,6 +566,9 @@ def fine_tune_model(
     for layer in mlp_layers[:layers_to_freeze]:
         print(f"Freezing layer: {layer}")
         layer.requires_grad_(False)
+
+    # Add this line to freeze batch norm layers
+    model.apply(freeze_bn)
 
     # Count trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
