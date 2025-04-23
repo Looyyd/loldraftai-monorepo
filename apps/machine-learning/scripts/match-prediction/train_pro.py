@@ -117,8 +117,8 @@ class FineTuningConfig:
 
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
-        self.epochs_per_unfreeze = 400
-        self.initial_frozen_layers = 3
+        self.epochs_per_unfreeze = 200
+        self.initial_frozen_layers = 4
 
         # Data augmentation options
         self.use_team_symmetry = False
@@ -629,7 +629,13 @@ def fine_tune_model(
         )
         wandb.watch(model, log_freq=100)
 
-    # Get task definitions and weights - now we only need to do this once
+    # Define loss functions for each task type
+    criterion = {
+        TaskType.BINARY_CLASSIFICATION: nn.BCEWithLogitsLoss(reduction="none"),
+        TaskType.REGRESSION: nn.MSELoss(reduction="none"),
+    }
+
+    # Get task definitions and weights
     enabled_tasks = FINE_TUNE_TASKS
     task_names = list(enabled_tasks.keys())
     task_weights = torch.tensor(
