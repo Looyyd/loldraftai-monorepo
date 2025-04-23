@@ -52,27 +52,27 @@ FINE_TUNE_TASKS = {
     "win_prediction": TaskDefinition(
         name="win_prediction",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.97,
+        weight=0.995,
     ),
     "win_prediction_0_25": TaskDefinition(
         name="win_prediction_0_25",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.03,
+        weight=0.005,
     ),
     "win_prediction_25_30": TaskDefinition(
         name="win_prediction_25_30",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.01,  # tends to overfit
+        weight=0.005,  # tends to overfit
     ),
     "win_prediction_30_35": TaskDefinition(
         name="win_prediction_30_35",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.03,
+        weight=0.005,
     ),
     "win_prediction_35_inf": TaskDefinition(
         name="win_prediction_35_inf",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.01,  # tends to overfit
+        weight=0.005,  # tends to overfit
     ),
 }
 
@@ -83,7 +83,7 @@ for position in POSITIONS:
         FINE_TUNE_TASKS[task_name] = TaskDefinition(
             name=task_name,
             task_type=TaskType.REGRESSION,
-            weight=0.02
+            weight=0.01
             / (len(POSITIONS) * len(TEAMS)),  # Same weight as in final_tasks
         )
 
@@ -115,11 +115,9 @@ class FineTuningConfig:
         self.save_checkpoints = False
         self.debug = False
 
-        # New unfreezing parameters
-        self.progressive_unfreezing = True  # Enable progressive unfreezing
-        # TODO: more granular unfreezeing, select epoch for each layer group
-        self.epochs_per_unfreeze = 1000
-        self.initial_frozen_layers = 2
+        # Add new unfreezing parameters
+        self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
+        self.epoch_to_unfreeze = [50, 100]  # Unfreeze one layer group at these epochs
 
         # Data augmentation options
         self.use_team_symmetry = False
@@ -519,11 +517,12 @@ def create_dataloaders(
 def unfreeze_layer_group(model: Model, frozen_layers: int) -> int:
     """
     Unfreeze the next group of layers in the model.
-    Returns the new count of unfrozen layer groups.
+    Returns the new count of frozen layer groups.
     """
     mlp_layers = list(model.mlp)
-    # trying to keep frist layer always frozen
+    # Keep at least one layer group frozen
     if frozen_layers <= 1:
+        print("Cannot unfreeze more layers: minimum of 1 frozen layer group required")
         return 1
 
     # Calculate which layer group to unfreeze (each group is 4 layers)
@@ -531,12 +530,9 @@ def unfreeze_layer_group(model: Model, frozen_layers: int) -> int:
 
     # Unfreeze all four layers in the group
     for i in range(4):
-        mlp_layers[base_index + i].requires_grad_(True)
-
-    print(
-        f"Unfreezing layer group at index {base_index}: "
-        f"{[mlp_layers[base_index + i] for i in range(4)]}"
-    )
+        layer_idx = base_index + i
+        mlp_layers[layer_idx].requires_grad_(True)
+        print(f"Unfrozing layer at index {layer_idx}: {mlp_layers[layer_idx]}")
 
     # Add this line to ensure BatchNorm layers stay frozen
     model.apply(freeze_bn)
@@ -568,9 +564,8 @@ def fine_tune_model(
         patch_mapping = pickle.load(f)["mapping"]
 
     # Initialize unfreezing state
-    # We start with 1 unfrozen layer
     frozen_layers = finetune_config.initial_frozen_layers
-    last_unfreeze_epoch = 0
+    next_unfreeze_idx = 0  # Track which epoch milestone we're waiting for
 
     main_model_config = TrainingConfig()
     # Initialize the model
@@ -596,11 +591,9 @@ def fine_tune_model(
         # embedding.requires_grad_(False)
 
     # Freeze early MLP layers
-    print(f"Freezing first {finetune_config.initial_frozen_layers} MLP layer groups...")
+    print(f"Freezing first {frozen_layers} MLP layer groups...")
     mlp_layers = list(model.mlp)
-    layers_to_freeze = (
-        finetune_config.initial_frozen_layers * 4
-    )  # Each group has 4 layers
+    layers_to_freeze = frozen_layers * 4
     for layer in mlp_layers[:layers_to_freeze]:
         print(f"Freezing layer: {layer}")
         layer.requires_grad_(False)
@@ -661,6 +654,26 @@ def fine_tune_model(
     for epoch in range(finetune_config.num_epochs):
         epoch_start = time.time()
 
+        # Check if we should unfreeze the next layer group
+        if (
+            next_unfreeze_idx < len(finetune_config.epoch_to_unfreeze)
+            and epoch >= finetune_config.epoch_to_unfreeze[next_unfreeze_idx]
+            and frozen_layers > 1
+        ):  # Keep at least one layer frozen
+
+            frozen_layers = unfreeze_layer_group(model, frozen_layers)
+            print(
+                f"\nEpoch {epoch}: Unfroze layer group. Remaining frozen groups: {frozen_layers}"
+            )
+
+            # Reinitialize optimizer with newly unfrozen parameters
+            optimizer = optim.AdamW(
+                get_optimizer_grouped_parameters(model, finetune_config.weight_decay),
+                lr=finetune_config.learning_rate,
+            )
+
+            next_unfreeze_idx += 1
+
         # Training
         model.train()
         # Re-freeze BatchNorm layers after model.train()
@@ -672,25 +685,6 @@ def fine_tune_model(
         pro_train_counts = {task: 0 for task in task_names}
         original_train_counts = {task: 0 for task in task_names}
         train_steps = 0
-
-        # Progressive unfreezing check
-        if (
-            finetune_config.progressive_unfreezing
-            and frozen_layers > 0
-            and epoch - last_unfreeze_epoch >= finetune_config.epochs_per_unfreeze
-        ):
-            if finetune_config.epochs_per_unfreeze == 200:
-                print("Lowering unfreezing frequency to 100 epochs")
-                finetune_config.epochs_per_unfreeze = 100
-            frozen_layers = unfreeze_layer_group(model, frozen_layers)
-            last_unfreeze_epoch = epoch
-
-            # Reinitialize optimizer with newly unfrozen parameters
-            optimizer = optim.AdamW(
-                get_optimizer_grouped_parameters(model, finetune_config.weight_decay),
-                lr=finetune_config.learning_rate,
-            )
-            print(f"\nUnfroze layer group. Remaining frozen groups: {frozen_layers}")
 
         progress_bar = tqdm(
             train_loader, desc=f"Epoch {epoch+1}/{finetune_config.num_epochs}"
