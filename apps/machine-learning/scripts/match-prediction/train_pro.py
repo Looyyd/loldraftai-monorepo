@@ -117,7 +117,7 @@ class FineTuningConfig:
 
         # Add new unfreezing parameters
         self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
-        self.epoch_to_unfreeze = [50, 100]  # Unfreeze one layer group at these epochs
+        self.epoch_to_unfreeze = [50]  # Unfreeze one layer group at these epochs
 
         # Data augmentation options
         self.use_team_symmetry = False
