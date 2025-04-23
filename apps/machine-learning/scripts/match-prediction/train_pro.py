@@ -635,6 +635,9 @@ def fine_tune_model(
 
         # Training
         model.train()
+        # Re-freeze BatchNorm layers after model.train()
+        model.apply(freeze_bn)
+
         train_losses = {task: 0.0 for task in task_names}
         pro_train_losses = {task: 0.0 for task in task_names}
         original_train_losses = {task: 0.0 for task in task_names}
