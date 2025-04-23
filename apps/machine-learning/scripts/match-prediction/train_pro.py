@@ -10,6 +10,7 @@ import pickle
 import pandas as pd
 import numpy as np
 import time
+import copy
 from typing import Optional, Dict, Any, List, Tuple
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
@@ -90,6 +91,7 @@ class FineTuningConfig:
         self.max_grad_norm = 1.0
         self.log_wandb = True
         self.save_checkpoints = False
+        self.debug = False
 
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
@@ -548,6 +550,10 @@ def fine_tune_model(
 
     model = load_model_state_dict(model, device, path=pretrained_model_path)
 
+    # Track best model and metrics
+    best_metric = float("inf")
+    best_model_state = None
+
     # Initially freeze ALL embeddings including queue_type
     print("Initially freezing all embedding layers...")
     model.patch_embedding.requires_grad_(False)
@@ -814,9 +820,43 @@ def fine_tune_model(
 
         # Validation
         model.eval()
-        validate(
+        val_metrics = validate(
             model, val_pro_loader, val_original_loader, finetune_config, device, epoch
         )
+
+        # Save best model based on validation loss
+        if val_metrics["val_pro_avg_loss"] < best_metric:
+            best_metric = val_metrics["val_pro_avg_loss"]
+            if not finetune_config.debug:
+                best_model_state = copy.deepcopy(model.state_dict())
+                best_model_path = output_model_path.replace(".pth", "_best.pth")
+                torch.save(best_model_state, best_model_path)
+                print(f"New best model saved with validation loss: {best_metric:.4f}")
+
+        # Save periodic checkpoints every 10 epochs
+        if (epoch + 1) % 10 == 0 and not finetune_config.debug:
+            checkpoint_path = output_model_path.replace(".pth", f"_epoch_{epoch+1}.pth")
+            torch.save(model.state_dict(), checkpoint_path)
+            print(f"Checkpoint saved at epoch {epoch+1}")
+
+        # Log metrics
+        if finetune_config.log_wandb:
+            wandb.log(
+                {
+                    "epoch": epoch + 1,
+                    "val_pro_loss": val_metrics["val_pro_avg_loss"],
+                    "val_pro_win_accuracy": val_metrics.get(
+                        "val_pro_win_prediction_accuracy", 0
+                    ),
+                    "best_val_loss": best_metric,
+                    **{
+                        f"val_pro_{k}": v
+                        for k, v in val_metrics.items()
+                        if k
+                        not in ["val_pro_avg_loss", "val_pro_win_prediction_accuracy"]
+                    },
+                }
+            )
 
         epoch_time = time.time() - epoch_start
 
@@ -848,10 +888,16 @@ def fine_tune_model(
             f"Epoch {epoch+1}/{finetune_config.num_epochs} completed in {epoch_time:.2f}s"
         )
 
-    # Save the final best model
-    # TODO: have logic that saves the best model based on validation loss
-    torch.save(model.state_dict(), output_model_path)
-    print(f"Final model saved to {output_model_path}")
+    # Save final model
+    if not finetune_config.debug:
+        torch.save(model.state_dict(), output_model_path)
+        print(f"Final model saved to {output_model_path}")
+
+        # Also save best model if it wasn't the final one
+        if best_model_state is not None:
+            best_model_path = output_model_path.replace(".pth", "_best.pth")
+            torch.save(best_model_state, best_model_path)
+            print(f"Best model saved with validation loss: {best_metric:.4f}")
 
     if finetune_config.log_wandb:
         wandb.finish()
@@ -866,7 +912,7 @@ def validate(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
-) -> Tuple[Optional[float], Dict[str, float]]:
+) -> Dict[str, float]:
     """Run validation on both pro and original data"""
     model.eval()
     enabled_tasks = FINE_TUNE_TASKS
@@ -897,7 +943,8 @@ def validate(
             device=device,
             prefix="val_pro",
         )
-        wandb.log(pro_metrics)
+        if config.log_wandb:
+            wandb.log(pro_metrics)
 
         # don't validate on every epoch, it's slow
         if epoch % 50 == 0 and val_original_loader is not None:
@@ -909,9 +956,10 @@ def validate(
                 device=device,
                 prefix="val_original",
             )
-            wandb.log(original_metrics)
+            if config.log_wandb:
+                wandb.log(original_metrics)
 
-    return
+    return pro_metrics
 
 
 def validate_loader(
