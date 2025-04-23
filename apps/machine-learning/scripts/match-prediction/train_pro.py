@@ -40,7 +40,6 @@ from utils.match_prediction.config import (
 )
 from utils.match_prediction.column_definitions import (
     RANKED_QUEUE_INDEX,
-    PRO_QUEUE_INDEX,
 )
 from utils.match_prediction.task_definitions import (
     TaskDefinition,
@@ -53,17 +52,40 @@ FINE_TUNE_TASKS = {
     "win_prediction": TaskDefinition(
         name="win_prediction",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=1,
+        weight=0.9,
+    ),
+    "win_prediction_0_25": TaskDefinition(
+        name="win_prediction_0_25",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_25_30": TaskDefinition(
+        name="win_prediction_25_30",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_30_35": TaskDefinition(
+        name="win_prediction_30_35",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
+    ),
+    "win_prediction_35_inf": TaskDefinition(
+        name="win_prediction_35_inf",
+        task_type=TaskType.BINARY_CLASSIFICATION,
+        weight=0.1,
     ),
 }
 
-FINE_TUNE_TASKS_LAST_EPOCHS = {
-    "win_prediction": TaskDefinition(
-        name="win_prediction",
-        task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=1,
-    ),
-}
+# Add gold tasks for all positions and teams
+for position in POSITIONS:
+    for team_id in TEAMS:
+        task_name = f"team_{team_id}_{position}_totalGold_at_900000"
+        FINE_TUNE_TASKS[task_name] = TaskDefinition(
+            name=task_name,
+            task_type=TaskType.REGRESSION,
+            weight=0.01
+            / (len(POSITIONS) * len(TEAMS)),  # Same weight as in final_tasks
+        )
 
 
 # in this file we get from a row, so it's different from column_definitions.py
@@ -126,15 +148,19 @@ class ProMatchDataset(Dataset):
         patch_mapping: Dict[str, int],
         train_or_test: str = "train",
         val_split: float = 0.2,
-        use_team_symmetry: bool = True,
         use_label_smoothing: bool = True,
         smooth_low: float = 0.1,
         smooth_high: float = 0.9,
         seed: int = 42,
     ):
         with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
-            # TODO: could have a function for this, it is done at many places and not obvious to use "mapping"
             self.champion_id_encoder = pickle.load(f)["mapping"]
+
+        # Load task statistics for normalization
+        with open(TASK_STATS_PATH, "rb") as f:
+            task_stats = pickle.load(f)
+            self.task_means = task_stats["means"]
+            self.task_stds = task_stats["stds"]
 
         self.patch_mapping = patch_mapping
 
@@ -150,44 +176,21 @@ class ProMatchDataset(Dataset):
 
         print(f"Created {train_or_test} dataset with {len(self.df)} pro games")
 
-        self.use_team_symmetry = use_team_symmetry
-
-        # Label smoothing parameters
         self.use_label_smoothing = use_label_smoothing
         self.smooth_low = smooth_low
         self.smooth_high = smooth_high
 
-        # Load task statistics for normalization
-        with open(TASK_STATS_PATH, "rb") as f:
-            task_stats = pickle.load(f)
-            self.task_means = task_stats["means"]
-            self.task_stds = task_stats["stds"]
-
-        # Define task symmetry transformations
-        self.task_symmetry = {
-            "win_prediction": lambda x: 1.0 - x,
-        }
-
     def __len__(self):
-        return len(self.df) * (2 if self.use_team_symmetry else 1)
+        return len(self.df)
 
     def __getitem__(self, idx):
-        """Get a single item from the dataset"""
-        # Handle symmetry indexing
-        use_symmetry = self.use_team_symmetry and idx >= len(self.df)
-        original_idx = idx % len(self.df)
-        row = self.df.iloc[original_idx]
+        row = self.df.iloc[idx]
 
-        # Extract features
         features = {}
 
-        # Process champion IDs with symmetry handling
+        # Process champion IDs
         try:
             champion_ids = self._get_champion_ids(row)
-            if use_symmetry:
-                # Swap blue and red team champions (first 5 with last 5)
-                champion_ids = champion_ids[5:] + champion_ids[:5]
-
             encoded_champs = self.champion_id_encoder.transform(champion_ids)
             features["champion_ids"] = torch.tensor(encoded_champs, dtype=torch.long)
         except Exception as e:
@@ -200,23 +203,53 @@ class ProMatchDataset(Dataset):
             self.patch_mapping[get_patch_from_raw_data(row)], dtype=torch.long
         )
 
+        # we fine tune from the trained ranked_queue_index
         features["queue_type"] = torch.tensor(RANKED_QUEUE_INDEX, dtype=torch.long)
-        # Add numerical_elo = 0 for pro games (highest skill level)
-        # TODO: could have a new elo as well
-        features["elo"] = torch.tensor(0.0, dtype=torch.long)
+        features["elo"] = torch.tensor(0.0, dtype=torch.long)  # Highest skill level
 
         # Calculate and normalize task values
         labels = {}
 
         # Win prediction
         win_prediction = row["team_100_win"]
-        if use_symmetry:
-            win_prediction = self.task_symmetry["win_prediction"](win_prediction)
         if self.use_label_smoothing:
             win_prediction = (
                 self.smooth_low if win_prediction == 0 else self.smooth_high
             )
         labels["win_prediction"] = torch.tensor(win_prediction, dtype=torch.float32)
+
+        # Game duration bucketed win predictions
+        game_duration_minutes = row["gameDuration"] / 60
+        duration_buckets = {
+            "0_25": game_duration_minutes < 25,
+            "25_30": 25 <= game_duration_minutes < 30,
+            "30_35": 30 <= game_duration_minutes < 35,
+            "35_inf": game_duration_minutes >= 35,
+        }
+
+        for bucket, condition in duration_buckets.items():
+            task_name = f"win_prediction_{bucket}"
+            if condition:
+                labels[task_name] = torch.tensor(win_prediction, dtype=torch.float32)
+            else:
+                labels[task_name] = torch.tensor(float("nan"), dtype=torch.float32)
+
+        # Gold values at 15 minutes (normalize using task stats)
+        for position in POSITIONS:
+            for team_id in TEAMS:
+                col = f"team_{team_id}_{position}_totalGold_at_900000"
+                task_name = col
+                gold_value = row[col]
+
+                # Normalize using task statistics
+                if self.task_stds[task_name] != 0:
+                    normalized_gold = (
+                        gold_value - self.task_means[task_name]
+                    ) / self.task_stds[task_name]
+                else:
+                    normalized_gold = gold_value - self.task_means[task_name]
+
+                labels[task_name] = torch.tensor(normalized_gold, dtype=torch.float32)
 
         return features, labels
 
@@ -413,7 +446,6 @@ def create_dataloaders(
         patch_mapping=patch_mapping,
         train_or_test="train",
         val_split=config.val_split,
-        use_team_symmetry=config.use_team_symmetry,
         use_label_smoothing=config.use_label_smoothing,
         smooth_low=config.smooth_low,
         smooth_high=config.smooth_high,
@@ -424,7 +456,6 @@ def create_dataloaders(
         patch_mapping=patch_mapping,
         train_or_test="test",
         val_split=config.val_split,
-        use_team_symmetry=False,
         use_label_smoothing=False,
     )
 
@@ -598,13 +629,7 @@ def fine_tune_model(
         )
         wandb.watch(model, log_freq=100)
 
-    # Define loss functions for each task type
-    criterion = {
-        TaskType.BINARY_CLASSIFICATION: nn.BCEWithLogitsLoss(reduction="none"),
-        TaskType.REGRESSION: nn.MSELoss(reduction="none"),
-    }
-
-    # Get task definitions and weights
+    # Get task definitions and weights - now we only need to do this once
     enabled_tasks = FINE_TUNE_TASKS
     task_names = list(enabled_tasks.keys())
     task_weights = torch.tensor(
@@ -628,16 +653,6 @@ def fine_tune_model(
 
     for epoch in range(finetune_config.num_epochs):
         epoch_start = time.time()
-
-        if epoch >= finetune_config.num_epochs * 0.75:
-            print(
-                f"Enabling last epoch tasks at epoch {epoch} (75% of {finetune_config.num_epochs})"
-            )
-            enabled_tasks = FINE_TUNE_TASKS_LAST_EPOCHS
-            task_names = list(enabled_tasks.keys())
-            task_weights = torch.tensor(
-                [task_def.weight for task_def in enabled_tasks.values()], device=device
-            )
 
         # Training
         model.train()
