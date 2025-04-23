@@ -52,27 +52,27 @@ FINE_TUNE_TASKS = {
     "win_prediction": TaskDefinition(
         name="win_prediction",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.9,
+        weight=0.97,
     ),
     "win_prediction_0_25": TaskDefinition(
         name="win_prediction_0_25",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.1,
+        weight=0.03,
     ),
     "win_prediction_25_30": TaskDefinition(
         name="win_prediction_25_30",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.1,
+        weight=0.03,
     ),
     "win_prediction_30_35": TaskDefinition(
         name="win_prediction_30_35",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.1,
+        weight=0.03,
     ),
     "win_prediction_35_inf": TaskDefinition(
         name="win_prediction_35_inf",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.1,
+        weight=0.03,
     ),
 }
 
@@ -118,8 +118,8 @@ class FineTuningConfig:
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
         # TODO: more granular unfreezeing, select epoch for each layer group
-        self.epochs_per_unfreeze = 30
-        self.initial_frozen_layers = 4
+        self.epochs_per_unfreeze = 1000
+        self.initial_frozen_layers = 2
 
         # Data augmentation options
         self.use_team_symmetry = False
@@ -993,9 +993,8 @@ def validate_loader(
     prefix: str,
 ) -> Dict[str, float]:
     """Validate model on a single loader"""
-    total_loss = torch.tensor(0.0, device=device)
     total_steps = 0
-
+    weighted_task_losses = torch.zeros(len(FINE_TUNE_TASKS), device=device)
     task_weights = torch.tensor(
         [task_def.weight for task_def in FINE_TUNE_TASKS.values()], device=device
     )
@@ -1008,8 +1007,7 @@ def validate_loader(
         outputs = model(features)
 
         # Calculate task losses
-        batch_losses = []
-        for task_name, task_def in FINE_TUNE_TASKS.items():
+        for task_idx, (task_name, task_def) in enumerate(FINE_TUNE_TASKS.items()):
             if task_def.task_type == TaskType.BINARY_CLASSIFICATION:
                 loss = nn.functional.binary_cross_entropy_with_logits(
                     outputs[task_name], labels[task_name], reduction="none"
@@ -1025,8 +1023,8 @@ def validate_loader(
                 loss_sum = loss[valid_mask].sum()
                 accumulators[task_name][0] += loss_sum
                 accumulators[task_name][1] += valid_mask.sum()
-
-            batch_losses.append(loss.mean())
+                # Add to weighted task losses
+                weighted_task_losses[task_idx] += loss[valid_mask].mean().item()
 
         # Calculate win prediction accuracy
         if "win_prediction" in FINE_TUNE_TASKS:
@@ -1036,9 +1034,6 @@ def validate_loader(
             win_accuracy[0] += correct
             win_accuracy[1] += batch_size
 
-        # Calculate total weighted loss
-        losses = torch.stack(batch_losses)
-        total_loss += (losses * task_weights).sum()
         total_steps += 1
 
     # Calculate metrics
@@ -1057,8 +1052,14 @@ def validate_loader(
             win_accuracy[0] / win_accuracy[1]
         ).item()
 
-    # Add average loss
-    metrics[f"{prefix}_avg_loss"] = (total_loss / total_steps).item()
+    # Calculate weighted average loss across all tasks
+    if total_steps > 0:
+        avg_weighted_task_losses = weighted_task_losses / total_steps
+        metrics[f"{prefix}_avg_loss"] = (
+            (avg_weighted_task_losses * task_weights).sum().item()
+        )
+    else:
+        metrics[f"{prefix}_avg_loss"] = float("inf")
 
     return metrics
 
