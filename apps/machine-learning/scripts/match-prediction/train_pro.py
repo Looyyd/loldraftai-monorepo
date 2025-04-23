@@ -81,7 +81,7 @@ class FineTuningConfig:
         # Fine-tuning hyperparameters - edit these directly instead of using command line flags
         self.num_epochs = 1000
         # TODO: try even lower? original is 8e-4 right now
-        self.learning_rate = 1.6e-6  # Lower learning rate for fine-tuning
+        self.learning_rate = 1.6e-5  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
         self.batch_size = 1024
