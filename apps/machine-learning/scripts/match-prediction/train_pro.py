@@ -117,7 +117,8 @@ class FineTuningConfig:
 
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
-        self.epochs_per_unfreeze = 200
+        # TODO: more granular unfreezeing, select epoch for each layer group
+        self.epochs_per_unfreeze = 30
         self.initial_frozen_layers = 4
 
         # Data augmentation options
