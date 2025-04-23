@@ -80,7 +80,7 @@ class FineTuningConfig:
 
     def __init__(self):
         # Fine-tuning hyperparameters - edit these directly instead of using command line flags
-        self.num_epochs = 1000
+        self.num_epochs = 200
         # TODO: try even lower? original is 8e-4 right now
         self.learning_rate = 1.6e-5  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
@@ -95,7 +95,7 @@ class FineTuningConfig:
 
         # New unfreezing parameters
         self.progressive_unfreezing = True  # Enable progressive unfreezing
-        self.epochs_per_unfreeze = 400
+        self.epochs_per_unfreeze = 150
         self.initial_frozen_layers = 3
 
         # Data augmentation options
@@ -109,6 +109,14 @@ class FineTuningConfig:
         # Loss balancing parameters
         self.pro_loss_weight = 1.0  # Weight multiplier for pro data losses
         self.original_loss_weight = 1.0  # Weight multiplier for original data losses
+
+        # New OneCycleLR parameters
+        self.use_one_cycle = True  # Enable/disable OneCycleLR
+        self.max_lr = 3e-5  # Peak learning rate
+        self.pct_start = 0.2  # Increased from 0.2 to 0.3 for longer warmup
+        self.div_factor = 25.0  # Keep the same initial lr
+        self.final_div_factor = 1e3  # Decreased from 1e4 to 1e3 for higher final lr
+        self.three_phase = False  # Changed to False for smoother descent
 
     def __str__(self):
         return "\n".join(f"{key}: {value}" for key, value in vars(self).items())
@@ -617,11 +625,36 @@ def fine_tune_model(
         lr=finetune_config.learning_rate,
     )
 
+    # Create dataloaders first
     train_loader, val_pro_loader, val_original_loader = create_dataloaders(
         pro_games_df,
         patch_mapping,
         finetune_config,
     )
+
+    # Now we can calculate total steps and initialize the scheduler
+    total_steps = finetune_config.num_epochs * len(train_loader)
+
+    # Initialize the OneCycleLR scheduler if enabled
+    if finetune_config.use_one_cycle:
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=finetune_config.max_lr,
+            total_steps=total_steps,
+            pct_start=finetune_config.pct_start,
+            div_factor=finetune_config.div_factor,
+            final_div_factor=finetune_config.final_div_factor,
+            three_phase=finetune_config.three_phase,
+        )
+        print(f"Using OneCycleLR scheduler with:")
+        print(f"- Initial lr: {finetune_config.max_lr/finetune_config.div_factor:.2e}")
+        print(f"- Max lr: {finetune_config.max_lr:.2e}")
+        print(
+            f"- Final lr: {finetune_config.max_lr/(finetune_config.div_factor*finetune_config.final_div_factor):.2e}"
+        )
+        print(
+            f"- Warmup epochs: {int(finetune_config.num_epochs * finetune_config.pct_start)}"
+        )
 
     # Check if we're using only pro data
     using_only_pro_data = finetune_config.original_batch_size == 0
@@ -794,6 +827,15 @@ def fine_tune_model(
             clip_grad_norm_(model.parameters(), finetune_config.max_grad_norm)
 
             optimizer.step()
+
+            # Step the scheduler if enabled
+            if finetune_config.use_one_cycle:
+                scheduler.step()
+
+                # Update progress bar with current learning rate
+                current_lr = scheduler.get_last_lr()[0]
+                progress_bar.set_postfix({"lr": f"{current_lr:.2e}"})
+
             train_steps += 1
 
         # Calculate average losses and metrics
@@ -860,10 +902,16 @@ def fine_tune_model(
 
         epoch_time = time.time() - epoch_start
 
-        # Log metrics
+        # Log learning rate
         if finetune_config.log_wandb:
+            current_lr = (
+                scheduler.get_last_lr()[0]
+                if finetune_config.use_one_cycle
+                else finetune_config.learning_rate
+            )
             log_dict = {
                 "epoch": epoch + 1,
+                "learning_rate": current_lr,
                 "epoch_time": epoch_time,
                 **{
                     f"train_loss_{task}": loss
