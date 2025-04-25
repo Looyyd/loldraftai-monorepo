@@ -10,12 +10,13 @@ import pandas as pd
 import numpy as np
 import time
 import copy
-from typing import Optional, Dict, Any, List, Tuple, Callable
+from typing import Optional, Dict, Any, List, Tuple, Callable, Set
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 import torch.nn as nn
 from tqdm import tqdm
 from torch.nn.utils import clip_grad_norm_
+import random
 
 from utils.match_prediction import (
     get_best_device,
@@ -121,7 +122,7 @@ class FineTuningConfig:
         self.log_wandb = True
         self.save_checkpoints = False
         self.debug = False
-        self.validation_interval = 1
+        self.validation_interval = 20
 
         # Add new unfreezing parameters
         self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
@@ -477,19 +478,89 @@ class MixedDataLoader:
             raise StopIteration
 
 
+def split_data_by_teams(
+    df: pd.DataFrame, val_split: float, seed: int = 42
+) -> Tuple[pd.DataFrame, pd.DataFrame, Set[str]]:
+    """
+    Split the data by randomly selecting teams for validation until reaching desired split ratio.
+
+    Args:
+        df: DataFrame containing the pro games data
+        val_split: Desired fraction of data for validation
+        seed: Random seed for reproducibility
+
+    Returns:
+        train_df: DataFrame containing training data
+        val_df: DataFrame containing validation data
+        val_teams: Set of team names selected for validation
+    """
+    random.seed(seed)
+
+    # Get unique team names
+    all_teams = set(df["blueTeamName"].unique()) | set(df["redTeamName"].unique())
+    all_teams = list(all_teams)
+
+    val_teams = set()
+    val_indices = set()
+
+    # Keep adding teams to validation set until we reach desired split
+    while len(val_indices) < len(df) * val_split:
+        if not all_teams:
+            break
+
+        # Randomly select a team
+        team = random.choice(all_teams)
+        all_teams.remove(team)
+        val_teams.add(team)
+
+        # Find all games where this team played (either blue or red)
+        team_matches = df.index[
+            (df["blueTeamName"] == team) | (df["redTeamName"] == team)
+        ].tolist()
+        val_indices.update(team_matches)
+
+    # Create train/val masks
+    val_mask = df.index.isin(val_indices)
+    train_mask = ~val_mask
+
+    # Split the data
+    train_df = df[train_mask].reset_index(drop=True)
+    val_df = df[val_mask].reset_index(drop=True)
+
+    print(f"Selected {len(val_teams)} teams for validation:")
+    print(f"Validation teams: {sorted(val_teams)}")
+    print(f"Training data: {len(train_df)} games")
+    print(f"Validation data: {len(val_df)} games")
+
+    return train_df, val_df, val_teams
+
+
 def create_dataloaders(
     pro_games_df,
     patch_mapping,
     config,
+    isolate_teams: bool = False,
 ):
     """Create train and validation dataloaders for fine-tuning"""
 
-    # Create pro datasets
+    if isolate_teams:
+        # Split data by teams first
+        train_df, val_df, val_teams = split_data_by_teams(
+            pro_games_df, val_split=config.val_split
+        )
+    else:
+        # Use random split as before
+        train_df = pro_games_df
+        val_df = pro_games_df
+
+    # Create pro datasets (modify the existing code to use the split dataframes)
     train_pro_dataset = ProMatchDataset(
-        pro_games_df=pro_games_df,
+        pro_games_df=train_df,  # Use train_df instead of pro_games_df
         patch_mapping=patch_mapping,
         train_or_test="train",
-        val_split=config.val_split,
+        val_split=(
+            config.val_split if not isolate_teams else 0.0
+        ),  # No additional split needed if using team isolation
         use_label_smoothing=config.use_label_smoothing,
         smooth_low=config.smooth_low,
         smooth_high=config.smooth_high,
@@ -497,10 +568,12 @@ def create_dataloaders(
     print(f"Created train dataset with {len(train_pro_dataset)} pro games")
 
     val_pro_dataset = ProMatchDataset(
-        pro_games_df=pro_games_df,
+        pro_games_df=val_df,  # Use val_df instead of pro_games_df
         patch_mapping=patch_mapping,
         train_or_test="test",
-        val_split=config.val_split,
+        val_split=(
+            config.val_split if not isolate_teams else 1.0
+        ),  # Use ALL data for validation when using team isolation
         use_label_smoothing=False,
     )
     print(f"Created test dataset with {len(val_pro_dataset)} pro games")
@@ -601,6 +674,7 @@ def fine_tune_model(
     finetune_config: FineTuningConfig,
     output_model_path: str,
     run_name: Optional[str] = None,
+    isolate_teams: bool = False,
 ):
     """Fine-tune a pre-trained model on professional game data"""
     device = get_best_device()
@@ -693,7 +767,11 @@ def fine_tune_model(
         pro_games_df,
         patch_mapping,
         finetune_config,
+        isolate_teams=isolate_teams,
     )
+
+    # Store the validation DataFrame for later use
+    val_df = val_pro_loader.dataset.df  # Get the validation DataFrame from the dataset
 
     # Check if we're using only pro data
     using_only_pro_data = finetune_config.original_batch_size == 0
@@ -913,10 +991,10 @@ def fine_tune_model(
                         f"New best model saved with validation loss: {best_metric:.4f}"
                     )
 
-            # Masked validation with different masking levels
+            # Masked validation with different masking levels - now using validation data only
             masked_metrics = validate_with_masking_levels(
                 model=model,
-                pro_games_df=pro_games_df,
+                val_df=val_df,  # Pass validation DataFrame instead of full dataset
                 patch_mapping=patch_mapping,
                 config=finetune_config,
                 device=device,
@@ -1116,14 +1194,14 @@ def validate_loader(
 
 def validate_with_masking_levels(
     model: Model,
-    pro_games_df: pd.DataFrame,
+    val_df: pd.DataFrame,
     patch_mapping: Dict[str, int],
     config: FineTuningConfig,
     device: torch.device,
     epoch: int,
 ) -> Dict[str, float]:
     """
-    Validate the model with different numbers of masked champions
+    Validate the model with different numbers of masked champions on validation data only
     Returns a dictionary of metrics for each masking level
     """
     all_metrics = {}
@@ -1135,10 +1213,10 @@ def validate_with_masking_levels(
     for num_masked in range(1, 11):  # 1 to 10 masked champions
         # Create dataset with specific number of masked champions
         val_masked_dataset = ProMatchDataset(
-            pro_games_df=pro_games_df,
+            pro_games_df=val_df,
             patch_mapping=patch_mapping,
             train_or_test="test",
-            val_split=config.val_split,
+            val_split=1.0,  # Use all data since this is already validation set
             use_label_smoothing=False,
             masking_function=lambda: num_masked,  # Always mask exactly num_masked champions
             unknown_champion_id=unknown_champion_id,
@@ -1155,7 +1233,7 @@ def validate_with_masking_levels(
         metrics = validate(
             model=model,
             val_pro_loader=val_masked_loader,
-            val_original_loader=None,  # No original loader needed for masked validation
+            val_original_loader=None,
             config=config,
             device=device,
             epoch=epoch,
@@ -1182,6 +1260,13 @@ def main():
     """Main function to run fine-tuning"""
     parser = argparse.ArgumentParser(
         description="Fine-tune model on professional game data"
+    )
+
+    # Add new argument for team isolation
+    parser.add_argument(
+        "--isolate-teams",
+        action="store_true",
+        help="Use team-based validation split instead of random split",
     )
 
     # Keep only essential path-related arguments
@@ -1262,6 +1347,7 @@ def main():
         finetune_config=config,
         output_model_path=args.output_path,
         run_name=args.run_name,
+        isolate_teams=args.isolate_teams,
     )
 
 
