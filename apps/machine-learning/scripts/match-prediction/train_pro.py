@@ -604,6 +604,98 @@ def split_data_by_teams(
     return train_df, val_df, val_teams
 
 
+def split_data_by_champions(
+    df: pd.DataFrame, val_split: float, seed: int = 42
+) -> Tuple[pd.DataFrame, pd.DataFrame, Set[int]]:
+    """
+    Split the data by randomly selecting champions for validation until reaching desired split ratio.
+    A game goes to validation if it contains any of the validation champions in any role.
+
+    Args:
+        df: DataFrame containing the pro games data
+        val_split: Desired fraction of data for validation
+        seed: Random seed for reproducibility
+
+    Returns:
+        train_df: DataFrame containing training data
+        val_df: DataFrame containing validation data
+        val_champions: Set of champion IDs selected for validation
+    """
+    random.seed(seed)
+
+    # Get all unique champion IDs from all games
+    all_champions = set()
+    for champ_list in df["champion_ids"]:
+        all_champions.update(champ_list)
+    all_champions = list(all_champions)  # Convert to list for random selection
+
+    print(f"Total unique champions in dataset: {len(all_champions)}")
+
+    val_champions = set()
+    val_indices = set()
+
+    # Keep adding champions to validation set until we reach desired split
+    while len(val_indices) < len(df) * val_split:
+        if not all_champions:
+            break
+
+        # Randomly select a champion
+        champion = random.choice(all_champions)
+        all_champions.remove(champion)
+        val_champions.add(champion)
+
+        # Find all games where this champion appears in any role
+        champion_matches = df.index[
+            df["champion_ids"].apply(lambda x: champion in x)
+        ].tolist()
+        val_indices.update(champion_matches)
+
+    # Create train/val masks
+    val_mask = df.index.isin(val_indices)
+    train_mask = ~val_mask
+
+    # Split the data
+    train_df = df[train_mask].reset_index(drop=True)
+    val_df = df[val_mask].reset_index(drop=True)
+
+    # Calculate champion appearance statistics
+    train_champ_counts = {}
+    val_champ_counts = {}
+
+    for champ_list in train_df["champion_ids"]:
+        for champ in champ_list:
+            train_champ_counts[champ] = train_champ_counts.get(champ, 0) + 1
+
+    for champ_list in val_df["champion_ids"]:
+        for champ in champ_list:
+            val_champ_counts[champ] = val_champ_counts.get(champ, 0) + 1
+
+    print("\nChampion-based split statistics:")
+    print(f"Selected {len(val_champions)} champions for validation")
+    print(f"Training data: {len(train_df)} games")
+    print(f"Validation data: {len(val_df)} games")
+
+    print("\nValidation champion appearances:")
+    for champ in sorted(val_champions):
+        train_count = train_champ_counts.get(champ, 0)
+        val_count = val_champ_counts.get(champ, 0)
+        print(
+            f"Champion {champ}: {val_count} validation games, {train_count} training games"
+        )
+
+    # Verify complete isolation
+    train_champions = set()
+    for champ_list in train_df["champion_ids"]:
+        train_champions.update(champ_list)
+
+    overlap = train_champions & val_champions
+    if overlap:
+        print("\nWARNING: Found validation champions in training set!")
+        print(f"Overlapping champions: {sorted(overlap)}")
+
+    return train_df, val_df, val_champions
+
+
 def create_dataloaders(
     pro_games_df,
     patch_mapping,
@@ -616,7 +708,7 @@ def create_dataloaders(
         pro_games_df: DataFrame containing pro games data
         patch_mapping: Dictionary mapping patch strings to indices
         config: Configuration object
-        split_strategy: One of "random", "team", or "patch"
+        split_strategy: One of "random", "team", "patch", or "champion"
     """
     # Split data based on strategy
     if split_strategy == "team":
@@ -625,6 +717,10 @@ def create_dataloaders(
         )
     elif split_strategy == "patch":
         train_df, val_df, val_patches = split_data_by_patches(
+            pro_games_df, val_split=config.val_split
+        )
+    elif split_strategy == "champion":
+        train_df, val_df, val_champions = split_data_by_champions(
             pro_games_df, val_split=config.val_split
         )
     else:  # random split
@@ -1329,11 +1425,11 @@ def main():
         description="Fine-tune model on professional game data"
     )
 
-    # Add split strategy argument
+    # Update split strategy choices
     parser.add_argument(
         "--split-strategy",
         type=str,
-        choices=["random", "team", "patch"],
+        choices=["random", "team", "patch", "champion"],
         default="random",
         help="Strategy to split data into train/validation sets",
     )
