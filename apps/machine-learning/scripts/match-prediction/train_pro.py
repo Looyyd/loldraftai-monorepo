@@ -180,8 +180,6 @@ class ProMatchDataset(Dataset):
         else:
             self.df = pro_games_df.iloc[indices[split_idx:]].reset_index(drop=True)
 
-        print(f"Created {train_or_test} dataset with {len(self.df)} pro games")
-
         self.use_label_smoothing = use_label_smoothing
         self.smooth_low = smooth_low
         self.smooth_high = smooth_high
@@ -496,6 +494,7 @@ def create_dataloaders(
         smooth_low=config.smooth_low,
         smooth_high=config.smooth_high,
     )
+    print(f"Created train dataset with {len(train_pro_dataset)} pro games")
 
     val_pro_dataset = ProMatchDataset(
         pro_games_df=pro_games_df,
@@ -504,6 +503,7 @@ def create_dataloaders(
         val_split=config.val_split,
         use_label_smoothing=False,
     )
+    print(f"Created test dataset with {len(val_pro_dataset)} pro games")
 
     # Create pro dataloaders
     train_pro_loader = DataLoader(
@@ -882,20 +882,6 @@ def fine_tune_model(
 
         # Validation
         model.eval()
-        # TODO: this is running twice!!
-        val_metrics = validate(
-            model, val_pro_loader, val_original_loader, finetune_config, device, epoch
-        )
-        val_loss = val_metrics["val_pro_avg_loss"]
-
-        # Save best model based on validation loss
-        if val_loss < best_metric:
-            best_metric = val_loss
-            if not finetune_config.debug:
-                best_model_state = copy.deepcopy(model.state_dict())
-                best_model_path = output_model_path.replace(".pth", "_best.pth")
-                torch.save(best_model_state, best_model_path)
-                print(f"New best model saved with validation loss: {best_metric:.4f}")
 
         # Save periodic checkpoints every 10 epochs
         if (epoch + 1) % 10 == 0 and not finetune_config.debug:
@@ -903,29 +889,9 @@ def fine_tune_model(
             torch.save(model.state_dict(), checkpoint_path)
             print(f"Checkpoint saved at epoch {epoch+1}")
 
-        # Log metrics
-        if finetune_config.log_wandb:
-            wandb.log(
-                {
-                    "epoch": epoch + 1,
-                    "val_pro_loss": val_loss,
-                    "val_pro_win_accuracy": val_metrics.get(
-                        "val_pro_win_prediction_accuracy", 0
-                    ),
-                    "best_val_loss": best_metric,
-                    **{
-                        f"val_pro_{k}": v
-                        for k, v in val_metrics.items()
-                        if k
-                        not in ["val_pro_avg_loss", "val_pro_win_prediction_accuracy"]
-                    },
-                }
-            )
-
         # Only run validation on specified intervals
         if (epoch + 1) % finetune_config.validation_interval == 0:
-            # Regular validation
-            # TODO: this is rerunning what was already done above
+            # Regular validation, with no masking
             val_metrics = validate(
                 model,
                 val_pro_loader,
@@ -935,6 +901,17 @@ def fine_tune_model(
                 epoch,
             )
             val_loss = val_metrics["val_pro_avg_loss"]
+
+            # Save best model based on validation loss
+            if val_loss < best_metric:
+                best_metric = val_loss
+                if not finetune_config.debug:
+                    best_model_state = copy.deepcopy(model.state_dict())
+                    best_model_path = output_model_path.replace(".pth", "_best.pth")
+                    torch.save(best_model_state, best_model_path)
+                    print(
+                        f"New best model saved with validation loss: {best_metric:.4f}"
+                    )
 
             # Masked validation with different masking levels
             masked_metrics = validate_with_masking_levels(
@@ -951,9 +928,8 @@ def fine_tune_model(
                 wandb.log(
                     {
                         "epoch": epoch + 1,
-                        # TODO: should maybe only add maskde metrics, the rest is duplicated now
                         "val_loss": val_loss,
-                        **{f"val_{k}": v for k, v in val_metrics.items()},
+                        **val_metrics,
                         **masked_metrics,
                     }
                 )
@@ -1043,8 +1019,6 @@ def validate(
             device=device,
             prefix="val_pro",
         )
-        if config.log_wandb:
-            wandb.log(pro_metrics)
 
         # don't validate on every epoch, it's slow
         if epoch % 50 == 0 and val_original_loader is not None:
@@ -1056,8 +1030,6 @@ def validate(
                 device=device,
                 prefix="val_original",
             )
-            if config.log_wandb:
-                wandb.log(original_metrics)
 
     return pro_metrics
 
@@ -1160,9 +1132,7 @@ def validate_with_masking_levels(
     _, unknown_champion_id = get_num_champions()
 
     # Test with different numbers of masked champions
-    for num_masked in range(11):  # 0 to 10 masked champions
-        print(f"\nValidating with {num_masked} masked champions...")
-
+    for num_masked in range(1, 11):  # 1 to 10 masked champions
         # Create dataset with specific number of masked champions
         val_masked_dataset = ProMatchDataset(
             pro_games_df=pro_games_df,
