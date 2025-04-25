@@ -144,6 +144,35 @@ class FineTuningConfig:
         return {key: value for key, value in vars(self).items()}
 
 
+def split_data_randomly(
+    df: pd.DataFrame, val_split: float, seed: int = 42
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Randomly split the data into train and validation sets.
+
+    Args:
+        df: DataFrame containing the pro games data
+        val_split: Desired fraction of data for validation
+        seed: Random seed for reproducibility
+
+    Returns:
+        train_df: DataFrame containing training data
+        val_df: DataFrame containing validation data
+    """
+    np.random.seed(seed)
+    indices = np.random.permutation(len(df))
+    split_idx = int(len(indices) * (1 - val_split))
+
+    train_df = df.iloc[indices[:split_idx]].reset_index(drop=True)
+    val_df = df.iloc[indices[split_idx:]].reset_index(drop=True)
+
+    print(f"Random split:")
+    print(f"Training data: {len(train_df)} games")
+    print(f"Validation data: {len(val_df)} games")
+
+    return train_df, val_df
+
+
 class ProMatchDataset(Dataset):
     """Dataset for professional matches fine-tuning"""
 
@@ -151,12 +180,9 @@ class ProMatchDataset(Dataset):
         self,
         pro_games_df: pd.DataFrame,
         patch_mapping: Dict[str, int],
-        train_or_test: str = "train",
-        val_split: float = 0.2,
         use_label_smoothing: bool = True,
         smooth_low: float = 0.1,
         smooth_high: float = 0.9,
-        seed: int = 42,
         masking_function: Optional[Callable[[], int]] = None,
         unknown_champion_id: Optional[int] = None,
     ):
@@ -170,17 +196,7 @@ class ProMatchDataset(Dataset):
             self.task_stds = task_stats["stds"]
 
         self.patch_mapping = patch_mapping
-
-        # Split data into train/test
-        np.random.seed(seed)
-        indices = np.random.permutation(len(pro_games_df))
-        split_idx = int(len(indices) * (1 - val_split))
-
-        if train_or_test == "train":
-            self.df = pro_games_df.iloc[indices[:split_idx]].reset_index(drop=True)
-        else:
-            self.df = pro_games_df.iloc[indices[split_idx:]].reset_index(drop=True)
-
+        self.df = pro_games_df
         self.use_label_smoothing = use_label_smoothing
         self.smooth_low = smooth_low
         self.smooth_high = smooth_high
@@ -543,24 +559,18 @@ def create_dataloaders(
 ):
     """Create train and validation dataloaders for fine-tuning"""
 
+    # Split data based on strategy
     if isolate_teams:
-        # Split data by teams first
         train_df, val_df, val_teams = split_data_by_teams(
             pro_games_df, val_split=config.val_split
         )
     else:
-        # Use random split as before
-        train_df = pro_games_df
-        val_df = pro_games_df
+        train_df, val_df = split_data_randomly(pro_games_df, val_split=config.val_split)
 
-    # Create pro datasets (modify the existing code to use the split dataframes)
+    # Create pro datasets with already split data
     train_pro_dataset = ProMatchDataset(
-        pro_games_df=train_df,  # Use train_df instead of pro_games_df
+        pro_games_df=train_df,
         patch_mapping=patch_mapping,
-        train_or_test="train",
-        val_split=(
-            config.val_split if not isolate_teams else 0.0
-        ),  # No additional split needed if using team isolation
         use_label_smoothing=config.use_label_smoothing,
         smooth_low=config.smooth_low,
         smooth_high=config.smooth_high,
@@ -568,12 +578,8 @@ def create_dataloaders(
     print(f"Created train dataset with {len(train_pro_dataset)} pro games")
 
     val_pro_dataset = ProMatchDataset(
-        pro_games_df=val_df,  # Use val_df instead of pro_games_df
+        pro_games_df=val_df,
         patch_mapping=patch_mapping,
-        train_or_test="test",
-        val_split=(
-            config.val_split if not isolate_teams else 1.0
-        ),  # Use ALL data for validation when using team isolation
         use_label_smoothing=False,
     )
     print(f"Created test dataset with {len(val_pro_dataset)} pro games")
@@ -1215,8 +1221,6 @@ def validate_with_masking_levels(
         val_masked_dataset = ProMatchDataset(
             pro_games_df=val_df,
             patch_mapping=patch_mapping,
-            train_or_test="test",
-            val_split=1.0,  # Use all data since this is already validation set
             use_label_smoothing=False,
             masking_function=lambda: num_masked,  # Always mask exactly num_masked champions
             unknown_champion_id=unknown_champion_id,
