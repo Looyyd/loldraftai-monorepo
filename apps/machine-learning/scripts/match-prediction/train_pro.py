@@ -1,6 +1,5 @@
 # scripts/match-prediction/train_pro.py
 # Finetunes the model on professional data
-# (Doesn't work well, might be removed soon, it is a research area)
 
 import os
 import argparse
@@ -50,6 +49,7 @@ from utils.match_prediction.task_definitions import (
 )
 
 # Attempting to finetune on multiple tasks, could perhaps make the model "understand" the domain adaptations better
+# Futhermore our ui integrates these tasks, so should probably train the model on them.
 # (for example, pro games have less drastic gold leads and less kills)
 FINE_TUNE_TASKS = {
     "win_prediction": TaskDefinition(
@@ -57,6 +57,8 @@ FINE_TUNE_TASKS = {
         task_type=TaskType.BINARY_CLASSIFICATION,
         weight=0.995,
     ),
+    # The masked win_prediction tasks tend to overfit, so we give them very very small weights.
+    # They already adapt well, when win_prediction is finetuned, these aux tasks automatically perform well.
     "win_prediction_0_25": TaskDefinition(
         name="win_prediction_0_25",
         task_type=TaskType.BINARY_CLASSIFICATION,
@@ -65,7 +67,7 @@ FINE_TUNE_TASKS = {
     "win_prediction_25_30": TaskDefinition(
         name="win_prediction_25_30",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.005,  # tends to overfit
+        weight=0.005,
     ),
     "win_prediction_30_35": TaskDefinition(
         name="win_prediction_30_35",
@@ -75,7 +77,7 @@ FINE_TUNE_TASKS = {
     "win_prediction_35_inf": TaskDefinition(
         name="win_prediction_35_inf",
         task_type=TaskType.BINARY_CLASSIFICATION,
-        weight=0.005,  # tends to overfit
+        weight=0.005,
     ),
 }
 
@@ -104,14 +106,16 @@ class FineTuningConfig:
     """Configuration class for fine-tuning"""
 
     def __init__(self):
-        # Fine-tuning hyperparameters - edit these directly instead of using command line flags
         self.num_epochs = 1000
-        # TODO: try even lower? original is 8e-4 right now
         self.learning_rate = 1.6e-5  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
         self.batch_size = 1024
+
+        # not including original data actually works well, there is no catastrphic forgetting
+        # TODO; maybe delte logic to include original data?
         self.original_batch_size = 0
+
         self.val_split = 0.2
         self.max_grad_norm = 1.0
         self.log_wandb = True
@@ -122,9 +126,6 @@ class FineTuningConfig:
         # Add new unfreezing parameters
         self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
         self.epoch_to_unfreeze = [50]  # Unfreeze one layer group at these epochs
-
-        # Data augmentation options
-        self.use_team_symmetry = False
 
         # Label smoothing options
         self.use_label_smoothing = True  # Enable label smoothing
@@ -192,7 +193,7 @@ class ProMatchDataset(Dataset):
 
     def _mask_champions(self, champion_list: List[int], num_to_mask: int) -> List[int]:
         """Masks a specific number of champions in the list with unknown_champion_id
-        
+
         Args:
             champion_list: List of already encoded champion IDs
             num_to_mask: Number of champions to mask
@@ -216,8 +217,8 @@ class ProMatchDataset(Dataset):
             champion_ids = self._get_champion_ids(row)
             # First encode the original champion IDs
             encoded_champs = self.champion_id_encoder.transform(champion_ids)
-            
-            # Then apply masking to the encoded values if needed
+
+            # Then apply masking to the encoded values if needed(the unkown champion id is already encoded)
             if (
                 self.masking_function is not None
                 and self.unknown_champion_id is not None
@@ -225,7 +226,7 @@ class ProMatchDataset(Dataset):
                 encoded_champs = self._mask_champions(
                     encoded_champs.tolist(), self.masking_function()
                 )
-            
+
             features["champion_ids"] = torch.tensor(encoded_champs, dtype=torch.long)
         except Exception as e:
             print(f"ERROR processing champion IDs for row {idx}: {e}")
@@ -237,9 +238,11 @@ class ProMatchDataset(Dataset):
             self.patch_mapping[get_patch_from_raw_data(row)], dtype=torch.long
         )
 
-        # we fine tune from the trained ranked_queue_index
+        # We fine tune from the trained ranked_queue_index
         features["queue_type"] = torch.tensor(RANKED_QUEUE_INDEX, dtype=torch.long)
-        features["elo"] = torch.tensor(0.0, dtype=torch.long)  # Highest skill level
+        features["elo"] = torch.tensor(
+            0.0, dtype=torch.long
+        )  # 0 is highest skill level
 
         # Calculate and normalize task values
         labels = {}
@@ -253,6 +256,7 @@ class ProMatchDataset(Dataset):
         labels["win_prediction"] = torch.tensor(win_prediction, dtype=torch.float32)
 
         # Game duration bucketed win predictions
+        # gamdeDuration is not normalized in pro dataset
         game_duration_minutes = row["gameDuration"] / 60
         duration_buckets = {
             "0_25": game_duration_minutes < 25,
@@ -694,9 +698,6 @@ def fine_tune_model(
     # Check if we're using only pro data
     using_only_pro_data = finetune_config.original_batch_size == 0
 
-    # Get unknown champion ID for masking using the utility function
-    _, unknown_champion_id = get_num_champions()
-
     for epoch in range(finetune_config.num_epochs):
         epoch_start = time.time()
 
@@ -704,8 +705,7 @@ def fine_tune_model(
         if (
             next_unfreeze_idx < len(finetune_config.epoch_to_unfreeze)
             and epoch >= finetune_config.epoch_to_unfreeze[next_unfreeze_idx]
-            and frozen_layers > 1
-        ):  # Keep at least one layer frozen
+        ):
 
             frozen_layers = unfreeze_layer_group(model, frozen_layers)
             print(
@@ -882,6 +882,7 @@ def fine_tune_model(
 
         # Validation
         model.eval()
+        # TODO: this is running twice!!
         val_metrics = validate(
             model, val_pro_loader, val_original_loader, finetune_config, device, epoch
         )
@@ -924,6 +925,7 @@ def fine_tune_model(
         # Only run validation on specified intervals
         if (epoch + 1) % finetune_config.validation_interval == 0:
             # Regular validation
+            # TODO: this is rerunning what was already done above
             val_metrics = validate(
                 model,
                 val_pro_loader,
@@ -949,6 +951,7 @@ def fine_tune_model(
                 wandb.log(
                     {
                         "epoch": epoch + 1,
+                        # TODO: should maybe only add maskde metrics, the rest is duplicated now
                         "val_loss": val_loss,
                         **{f"val_{k}": v for k, v in val_metrics.items()},
                         **masked_metrics,
