@@ -173,6 +173,59 @@ def split_data_randomly(
     return train_df, val_df
 
 
+def split_data_by_patches(
+    df: pd.DataFrame, val_split: float
+) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
+    """
+    Split the data by putting the most recent patches in the validation set until reaching desired split ratio.
+
+    Args:
+        df: DataFrame containing the pro games data
+        val_split: Desired fraction of data for validation
+
+    Returns:
+        train_df: DataFrame containing training data (earlier patches)
+        val_df: DataFrame containing validation data (recent patches)
+        val_patches: List of patch versions in validation set
+    """
+    # Get patch for each game and add as column for easier manipulation
+    df = df.copy()
+    df["patch"] = df.apply(get_patch_from_raw_data, axis=1)
+
+    # Get unique patches and sort them (newest first)
+    patches = sorted(df["patch"].unique(), reverse=True)
+
+    val_patches = []
+    val_indices = set()
+
+    # Keep adding patches to validation set until we reach desired split
+    for patch in patches:
+        # Find all games from this patch
+        patch_matches = df.index[df["patch"] == patch].tolist()
+        val_indices.update(patch_matches)
+        val_patches.append(patch)
+
+        # Check if we have enough validation data
+        if len(val_indices) >= len(df) * val_split:
+            break
+
+    # Create train/val masks
+    val_mask = df.index.isin(val_indices)
+    train_mask = ~val_mask
+
+    # Split the data
+    train_df = df[train_mask].reset_index(drop=True)
+    val_df = df[val_mask].reset_index(drop=True)
+
+    print(f"Patch-based split:")
+    print(f"Validation patches: {', '.join(sorted(val_patches))}")
+    print(f"Training patches: {', '.join(sorted(set(patches) - set(val_patches)))}")
+    print(f"Training data: {len(train_df)} games")
+    print(f"Validation data: {len(val_df)} games")
+
+    return train_df, val_df, val_patches
+
+
 class ProMatchDataset(Dataset):
     """Dataset for professional matches fine-tuning"""
 
@@ -555,16 +608,26 @@ def create_dataloaders(
     pro_games_df,
     patch_mapping,
     config,
-    isolate_teams: bool = False,
+    split_strategy: str = "random",
 ):
-    """Create train and validation dataloaders for fine-tuning"""
+    """Create train and validation dataloaders for fine-tuning
 
+    Args:
+        pro_games_df: DataFrame containing pro games data
+        patch_mapping: Dictionary mapping patch strings to indices
+        config: Configuration object
+        split_strategy: One of "random", "team", or "patch"
+    """
     # Split data based on strategy
-    if isolate_teams:
+    if split_strategy == "team":
         train_df, val_df, val_teams = split_data_by_teams(
             pro_games_df, val_split=config.val_split
         )
-    else:
+    elif split_strategy == "patch":
+        train_df, val_df, val_patches = split_data_by_patches(
+            pro_games_df, val_split=config.val_split
+        )
+    else:  # random split
         train_df, val_df = split_data_randomly(pro_games_df, val_split=config.val_split)
 
     # Create pro datasets with already split data
@@ -680,7 +743,7 @@ def fine_tune_model(
     finetune_config: FineTuningConfig,
     output_model_path: str,
     run_name: Optional[str] = None,
-    isolate_teams: bool = False,
+    split_strategy: str = "random",
 ):
     """Fine-tune a pre-trained model on professional game data"""
     device = get_best_device()
@@ -773,7 +836,7 @@ def fine_tune_model(
         pro_games_df,
         patch_mapping,
         finetune_config,
-        isolate_teams=isolate_teams,
+        split_strategy=split_strategy,
     )
 
     # Store the validation DataFrame for later use
@@ -1266,11 +1329,13 @@ def main():
         description="Fine-tune model on professional game data"
     )
 
-    # Add new argument for team isolation
+    # Add split strategy argument
     parser.add_argument(
-        "--isolate-teams",
-        action="store_true",
-        help="Use team-based validation split instead of random split",
+        "--split-strategy",
+        type=str,
+        choices=["random", "team", "patch"],
+        default="random",
+        help="Strategy to split data into train/validation sets",
     )
 
     # Keep only essential path-related arguments
@@ -1351,7 +1416,7 @@ def main():
         finetune_config=config,
         output_model_path=args.output_path,
         run_name=args.run_name,
-        isolate_teams=args.isolate_teams,
+        split_strategy=args.split_strategy,
     )
 
 
