@@ -126,7 +126,7 @@ class FineTuningConfig:
 
         # Add new unfreezing parameters
         self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
-        self.epoch_to_unfreeze = [50]  # Unfreeze one layer group at these epochs
+        self.epoch_to_unfreeze = [50, 100, 150]  # Unfreeze one layer group at these epochs
 
         # Label smoothing options
         self.use_label_smoothing = True  # Enable label smoothing
