@@ -871,10 +871,9 @@ def fine_tune_model(
     print("Initially freezing all embedding layers...")
     model.patch_embedding.requires_grad_(False)
     model.champion_patch_embedding.requires_grad_(False)
+    model.champion_embedding.requires_grad_(False)
     for name, embedding in model.embeddings.items():
         embedding.requires_grad_(False)
-        # if name != "queue_type":
-        # embedding.requires_grad_(False)
 
     # Freeze early MLP layers
     print(f"Freezing first {frozen_layers} MLP layer groups...")
