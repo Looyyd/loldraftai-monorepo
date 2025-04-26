@@ -107,7 +107,7 @@ class FineTuningConfig:
     """Configuration class for fine-tuning"""
 
     def __init__(self):
-        self.num_epochs = 1000
+        self.num_epochs = 3000
         self.learning_rate = 1.6e-5  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
