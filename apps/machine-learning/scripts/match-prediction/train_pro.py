@@ -126,7 +126,11 @@ class FineTuningConfig:
 
         # Add new unfreezing parameters
         self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
-        self.epoch_to_unfreeze = [50, 100, 150]  # Unfreeze one layer group at these epochs
+        self.epoch_to_unfreeze = [
+            50,
+            100,
+            150,
+        ]  # Unfreeze one layer group at these epochs
 
         # Label smoothing options
         self.use_label_smoothing = True  # Enable label smoothing
@@ -1375,6 +1379,8 @@ def validate_with_masking_levels(
 
     # Test with different numbers of masked champions
     for num_masked in range(1, 11):  # 1 to 10 masked champions
+        np.random.seed(42 + num_masked)  # <--- Add this line for deterministic masking
+
         # Create dataset with specific number of masked champions
         val_masked_dataset = ProMatchDataset(
             pro_games_df=val_df,
@@ -1387,7 +1393,7 @@ def validate_with_masking_levels(
         val_masked_loader = DataLoader(
             val_masked_dataset,
             batch_size=config.batch_size,
-            shuffle=False,
+            shuffle=False,  # Ensure no shuffling
             collate_fn=pro_collate_fn,
         )
 
