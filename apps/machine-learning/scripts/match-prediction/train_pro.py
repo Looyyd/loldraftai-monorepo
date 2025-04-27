@@ -700,6 +700,13 @@ def split_data_by_champions(
     return train_df, val_df, val_champions
 
 
+def finetune_masking_function():
+    if np.random.rand() < 0.2:
+        return np.random.randint(1, 11)
+    else:
+        return 0
+
+
 def create_dataloaders(
     pro_games_df,
     patch_mapping,
@@ -730,6 +737,10 @@ def create_dataloaders(
     else:  # random split
         train_df, val_df = split_data_randomly(pro_games_df, val_split=config.val_split)
 
+    # Get num_champions and unknown_champion_id using the utility function
+    # TODO: this could be inside the dataset class
+    _, unknown_champion_id = get_num_champions()
+
     # Create pro datasets with already split data
     train_pro_dataset = ProMatchDataset(
         pro_games_df=train_df,
@@ -737,6 +748,8 @@ def create_dataloaders(
         use_label_smoothing=config.use_label_smoothing,
         smooth_low=config.smooth_low,
         smooth_high=config.smooth_high,
+        masking_function=finetune_masking_function,
+        unknown_champion_id=unknown_champion_id,
     )
     print(f"Created train dataset with {len(train_pro_dataset)} pro games")
 
