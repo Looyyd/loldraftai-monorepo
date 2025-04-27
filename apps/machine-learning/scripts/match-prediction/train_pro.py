@@ -701,7 +701,7 @@ def split_data_by_champions(
 
 
 def finetune_masking_function():
-    if np.random.rand() < 0.2:
+    if np.random.rand() < 0.5:
         return np.random.randint(1, 11)
     else:
         return 0
