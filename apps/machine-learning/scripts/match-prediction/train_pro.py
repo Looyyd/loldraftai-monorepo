@@ -110,14 +110,14 @@ class FineTuningConfig:
 
     def __init__(self):
         self.num_epochs = 3000
-        self.learning_rate = 1.6e-5  # Lower learning rate for fine-tuning
+        self.learning_rate = 8e-6  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
         self.batch_size = 1024
 
         # not including original data actually works well, there is no catastrphic forgetting
         # TODO; maybe delte logic to include original data?
-        self.original_batch_size = 1024 * 3
+        self.original_batch_size = 1024 * 7
 
         self.val_split = 0.2
         self.max_grad_norm = 1.0
