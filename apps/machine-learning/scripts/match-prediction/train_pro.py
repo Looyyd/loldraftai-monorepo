@@ -1144,7 +1144,11 @@ def fine_tune_model(
 
         # Save periodic checkpoints every 10 epochs
         if (epoch + 1) % 10 == 0 and not finetune_config.debug:
-            checkpoint_path = output_model_path.replace(".pth", f"_epoch_{epoch+1}.pth")
+            # Add run name to periodic checkpoints if available
+            run_suffix = f"_{run_name}" if run_name else ""
+            checkpoint_path = output_model_path.replace(
+                ".pth", f"{run_suffix}_epoch_{epoch+1}.pth"
+            )
             torch.save(model.state_dict(), checkpoint_path)
             print(f"Checkpoint saved at epoch {epoch+1}")
 
