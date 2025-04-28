@@ -125,11 +125,11 @@ class FineTuningConfig:
         self.validation_interval = 20
 
         # Add new unfreezing parameters
-        self.initial_frozen_layers = 4  # Start with 4 frozen layer groups
+        self.initial_frozen_layers = 5  # Start with 4 frozen layer groups
         self.epoch_to_unfreeze = [
-            50,
-            100,
-            150,
+            200,
+            400,
+            600
         ]  # Unfreeze one layer group at these epochs
 
         # Label smoothing options
