@@ -43,11 +43,13 @@ from utils.match_prediction.config import (
 )
 from utils.match_prediction.column_definitions import (
     RANKED_QUEUE_INDEX,
+    PRO_QUEUE_INDEX,
 )
 from utils.match_prediction.task_definitions import (
     TaskDefinition,
     TaskType,
 )
+from utils.match_prediction.masking_strategies import MASKING_STRATEGIES
 
 # Attempting to finetune on multiple tasks, could perhaps make the model "understand" the domain adaptations better
 # Futhermore our ui integrates these tasks, so should probably train the model on them.
@@ -115,7 +117,7 @@ class FineTuningConfig:
 
         # not including original data actually works well, there is no catastrphic forgetting
         # TODO; maybe delte logic to include original data?
-        self.original_batch_size = 0
+        self.original_batch_size = 1024 * 3
 
         self.val_split = 0.2
         self.max_grad_norm = 1.0
@@ -125,12 +127,8 @@ class FineTuningConfig:
         self.validation_interval = 20
 
         # Add new unfreezing parameters
-        self.initial_frozen_layers = 5  # Start with 4 frozen layer groups
-        self.epoch_to_unfreeze = [
-            200,
-            400,
-            600
-        ]  # Unfreeze one layer group at these epochs
+        self.initial_frozen_layers = 0
+        self.epoch_to_unfreeze = []  # Unfreeze one layer group at these epochs
 
         # Label smoothing options
         self.use_label_smoothing = True  # Enable label smoothing
@@ -311,7 +309,7 @@ class ProMatchDataset(Dataset):
         )
 
         # We fine tune from the trained ranked_queue_index
-        features["queue_type"] = torch.tensor(RANKED_QUEUE_INDEX, dtype=torch.long)
+        features["queue_type"] = torch.tensor(PRO_QUEUE_INDEX, dtype=torch.long)
         features["elo"] = torch.tensor(
             0.0, dtype=torch.long
         )  # 0 is highest skill level
@@ -507,6 +505,12 @@ class MixedDataLoader:
         self.original_iter = iter(original_loader)
         self.length = len(finetune_loader)
 
+        # Load task statistics once during initialization
+        with open(TASK_STATS_PATH, "rb") as f:
+            task_stats = pickle.load(f)
+            self.game_duration_mean = task_stats["means"]["gameDuration"]
+            self.game_duration_std = task_stats["stds"]["gameDuration"]
+
     def __len__(self):
         return self.length
 
@@ -540,9 +544,56 @@ class MixedDataLoader:
 
             # Only include fine-tune tasks in labels
             for key in FINE_TUNE_TASKS:
-                combined_labels[key] = torch.cat(
-                    [finetune_labels[key], original_labels[key]]
-                )
+                if not key.startswith("win_prediction_"):
+                    # For non-win prediction tasks, just concatenate as before
+                    combined_labels[key] = torch.cat(
+                        [finetune_labels[key], original_labels[key]]
+                    )
+                else:
+                    # For win_prediction bucketed tasks
+                    if key == "win_prediction":
+                        # The main win_prediction task is handled normally
+                        combined_labels[key] = torch.cat(
+                            [finetune_labels[key], original_labels["win_prediction"]]
+                        )
+                    else:
+                        # Get bucket range from task name
+                        bucket = key.split("win_prediction_")[1]
+
+                        # Denormalize game duration for original data using stored stats
+                        orig_duration_minutes = (
+                            original_labels["gameDuration"] * self.game_duration_std
+                            + self.game_duration_mean
+                        ) / 60
+
+                        # Create duration mask based on bucket
+                        if bucket == "0_25":
+                            duration_mask = orig_duration_minutes < 25
+                        elif bucket == "25_30":
+                            duration_mask = (orig_duration_minutes >= 25) & (
+                                orig_duration_minutes < 30
+                            )
+                        elif bucket == "30_35":
+                            duration_mask = (orig_duration_minutes >= 30) & (
+                                orig_duration_minutes < 35
+                            )
+                        elif bucket == "35_inf":
+                            duration_mask = orig_duration_minutes >= 35
+
+                        # Create masked labels: use win_prediction where duration matches, NaN otherwise
+                        orig_masked_labels = torch.full_like(
+                            original_labels["win_prediction"],
+                            float("nan"),
+                            dtype=torch.float32,
+                        )
+                        orig_masked_labels[duration_mask] = original_labels[
+                            "win_prediction"
+                        ][duration_mask]
+
+                        # Combine finetune and masked original labels
+                        combined_labels[key] = torch.cat(
+                            [finetune_labels[key], orig_masked_labels]
+                        )
 
             return combined_features, combined_labels
 
@@ -741,6 +792,11 @@ def create_dataloaders(
     # TODO: this could be inside the dataset class
     _, unknown_champion_id = get_num_champions()
 
+    # Create masking strategy for both datasets
+    masking_strategy = MASKING_STRATEGIES[
+        "strategic"
+    ]()  # Use strategic masking by default
+
     # Create pro datasets with already split data
     train_pro_dataset = ProMatchDataset(
         pro_games_df=train_df,
@@ -778,12 +834,19 @@ def create_dataloaders(
 
     # Check if we should use original data
     if config.original_batch_size > 0:
-        # Create original dataset (using only fine-tune tasks)
-        # Use full dataset for training but fraction for validation
+        # Create original dataset with the SAME masking strategy
         train_original_dataset = MatchDataset(
-            train_or_test="train", dataset_fraction=1.0  # Use full dataset for training
+            train_or_test="train",
+            dataset_fraction=1.0,  # Use full dataset for training
+            masking_function=masking_strategy,  # Add masking to original dataset
+            unknown_champion_id=unknown_champion_id,  # Add unknown champion ID
         )
-        val_original_dataset = MatchDataset(train_or_test="test", dataset_fraction=0.01)
+        val_original_dataset = MatchDataset(
+            train_or_test="test",
+            dataset_fraction=0.01,
+            masking_function=masking_strategy,  # Add masking to validation set too
+            unknown_champion_id=unknown_champion_id,
+        )
 
         # Create original dataloaders
         train_original_loader = DataLoader(
@@ -810,7 +873,6 @@ def create_dataloaders(
         # If original_batch_size is 0, use only pro data
         print("Using only pro data for training (original_batch_size = 0)")
         train_loader = train_pro_loader
-        # Create a dummy original loader for validation
         val_original_loader = None
 
     return train_loader, val_pro_loader, val_original_loader
@@ -890,7 +952,9 @@ def fine_tune_model(
     model.champion_patch_embedding.requires_grad_(False)
     model.champion_embedding.requires_grad_(False)
     for name, embedding in model.embeddings.items():
-        embedding.requires_grad_(False)
+        # We don't freeze queue_type, to include original data but let model differentiate between pro and original data
+        if name != "queue_type":
+            embedding.requires_grad_(False)
 
     # Freeze early MLP layers
     print(f"Freezing first {frozen_layers} MLP layer groups...")
