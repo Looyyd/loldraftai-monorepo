@@ -147,6 +147,14 @@ export default function Draft() {
           <h1 className="brand-text text-5xl font-extrabold tracking-tight leading-tight text-primary text-center mb-8">
             LoLDraftAI Analysis
           </h1>
+
+          <div className="border-l-4 border-amber-500 text-amber-600 p-4 mb-4 rounded-md shadow">
+            <h2 className="font-semibold text-lg mb-1">⚠️ Disclaimer</h2>
+            <p>
+              The pro model is experimental, as such final draft judgment should
+              be made by humans. It also shouldn&apos;t be used for betting.
+            </p>
+          </div>
           <div className="flex flex-wrap items-stretch justify-start mb-4">
             <div className="flex w-full p-1 sm:w-auto">
               <div className="flex-1">
