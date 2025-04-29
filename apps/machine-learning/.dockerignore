@@ -4,8 +4,10 @@
 # Allow specific files
 !requirements-inference.txt
 !serve-model.py
+!serve-model-pro.py
 !utils/
 !data/models/match_outcome_model.onnx
+!data/models/match_outcome_model_pro_finetuned.onnx
 !data/champion_id_encoder.pkl
 !data/model_config.pkl
 !data/task_stats.pkl

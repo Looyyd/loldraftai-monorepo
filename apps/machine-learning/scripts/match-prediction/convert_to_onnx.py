@@ -4,6 +4,7 @@
 import torch
 import pickle
 from pathlib import Path
+import argparse
 
 from utils.match_prediction.model import Model
 from utils.match_prediction.column_definitions import COLUMNS, ColumnType
@@ -12,7 +13,9 @@ from utils.match_prediction import (
     MODEL_PATH,
     MODEL_CONFIG_PATH,
     ONNX_MODEL_PATH,
+    PRO_ONNX_MODEL_PATH,
     load_model_state_dict,
+    PRO_MODEL_PATH,
 )
 
 
@@ -38,8 +41,37 @@ def preprocess_sample_input():
     return sample_input
 
 
+def get_model_paths(model_type: str):
+    """Get input and output paths based on model type"""
+    if model_type == "pro":
+        input_path = PRO_MODEL_PATH
+        output_path = PRO_ONNX_MODEL_PATH
+    elif model_type == "original":
+        input_path = MODEL_PATH
+        output_path = ONNX_MODEL_PATH
+    else:
+        raise ValueError(
+            f"Invalid model type: {model_type}. Must be 'pro' or 'original'"
+        )
+    return input_path, output_path
+
+
 def main():
-    print("Starting PyTorch to ONNX model conversion...")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        choices=["pro", "original"],
+        default="original",
+        help="Type of model to convert (pro or original)",
+    )
+    args = parser.parse_args()
+
+    print(f"Starting PyTorch to ONNX model conversion for {args.model_type} model...")
+
+    input_path, output_path = get_model_paths(args.model_type)
+    print(f"Input path: {input_path}")
+    print(f"Output path: {output_path}")
 
     # Load model configuration
     print(f"Loading model configuration from {MODEL_CONFIG_PATH}")
@@ -55,7 +87,7 @@ def main():
         hidden_dims=model_params["hidden_dims"],
     )
 
-    model = load_model_state_dict(model, "cpu", path=MODEL_PATH)
+    model = load_model_state_dict(model, "cpu", path=input_path)
     model.eval()
 
     # Create sample input for tracing
@@ -63,7 +95,7 @@ def main():
     sample_input = preprocess_sample_input()
 
     # Output path
-    onnx_path = Path(ONNX_MODEL_PATH)
+    onnx_path = Path(output_path)
     print(f"Will export ONNX model to {onnx_path}")
 
     # Make sure the directory exists

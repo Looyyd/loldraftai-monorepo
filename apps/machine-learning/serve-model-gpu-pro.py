@@ -1,4 +1,4 @@
-# serve-model-gpu.py
+# serve-model-gpu-pro.py
 import torch
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import APIKeyHeader
@@ -14,7 +14,7 @@ import asyncio
 
 from utils.match_prediction import get_best_device, load_model_state_dict
 from utils.match_prediction.model import Model
-from utils.match_prediction.column_definitions import RANKED_QUEUE_INDEX
+from utils.match_prediction.column_definitions import PRO_QUEUE_INDEX
 from utils.match_prediction import (
     MODEL_PATH,
     MODEL_CONFIG_PATH,
@@ -22,6 +22,7 @@ from utils.match_prediction import (
     CHAMPION_ID_ENCODER_PATH,
     POSITIONS,
     TASK_STATS_PATH,
+    PRO_MODEL_PATH,
 )
 from utils.match_prediction.config import TrainingConfig
 
@@ -57,7 +58,7 @@ model = Model(
     dropout=0.0,  # No dropout needed for inference
 )
 
-model = load_model_state_dict(model, device, path=MODEL_PATH)
+model = load_model_state_dict(model, device, path=PRO_MODEL_PATH)
 model.eval()
 print("Model loaded successfully")
 
@@ -83,7 +84,7 @@ class APIInput(BaseModel):
     champion_ids: List[int | Literal["UNKNOWN"]]
     numerical_elo: int
     patch: str | None = None
-    queue_type: int = RANKED_QUEUE_INDEX
+    queue_type: int = PRO_QUEUE_INDEX
     _mapped_patch: int | None = None
 
     @property
@@ -365,5 +366,5 @@ async def get_metadata(api_key: str = Depends(verify_api_key)):
 
 
 if __name__ == "__main__":
-    print(f"Starting GPU-optimized model server on http://0.0.0.0:8000")
-    uvicorn.run("serve-model-gpu:app", host="0.0.0.0", port=8000, reload=False)
+    print(f"Starting Pro GPU-optimized model server on http://0.0.0.0:8001")
+    uvicorn.run("serve-model-gpu-pro:app", host="0.0.0.0", port=8001, reload=False)
