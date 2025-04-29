@@ -3,6 +3,7 @@ import { PredictionTracking } from "@/app/lib/prediction-tracking";
 import { NextResponse } from "next/server";
 
 const backendUrl = process.env.INFERENCE_BACKEND_URL ?? "http://127.0.0.1:8000";
+const proBackendUrl = process.env.PRO_INFERENCE_BACKEND_URL;
 const backendApiKey = process.env.INFERENCE_BACKEND_API_KEY;
 
 export async function OPTIONS() {
@@ -38,7 +39,30 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    const response = await fetch(`${backendUrl}/predict-in-depth`, {
+    // Check if using pro model (numerical_elo = -1)
+    const isPro = body.numerical_elo === -1;
+    if (isPro && !proBackendUrl) {
+      return NextResponse.json(
+        { error: "Pro model not available" },
+        {
+          status: 404,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    // Use pro backend URL if numerical_elo is -1 and proBackendUrl is available
+    const targetUrl = isPro ? proBackendUrl! : backendUrl;
+    // TODO: this could be cleaner
+    // Set numerical elo to 0 for pro
+    if (isPro) {
+      body.numerical_elo = 0;
+    }
+
+    const response = await fetch(`${targetUrl}/predict-in-depth`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

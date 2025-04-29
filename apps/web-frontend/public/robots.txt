@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /pro-draft/
 
 Sitemap: https://loldraftai.com/sitemap.xml 

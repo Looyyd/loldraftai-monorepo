@@ -13,6 +13,7 @@ interface ChampionSuggestionRequest {
 }
 
 const backendUrl = process.env.INFERENCE_BACKEND_URL ?? "http://127.0.0.1:8000";
+const proBackendUrl = process.env.PRO_INFERENCE_BACKEND_URL;
 const backendApiKey = process.env.INFERENCE_BACKEND_API_KEY;
 
 export async function OPTIONS() {
@@ -57,6 +58,24 @@ export async function POST(request: Request) {
       patch,
     } = body;
 
+    // Check if using pro model (elo = -1)
+    const isPro = elo === -1;
+    if (isPro && !proBackendUrl) {
+      return NextResponse.json(
+        { error: "Pro model not available" },
+        {
+          status: 404,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    // Use pro backend URL if elo is -1 and proBackendUrl is available
+    const targetUrl = isPro ? proBackendUrl! : backendUrl;
+
     // Prepare batch of predictions - one for each candidate champion
     const batchInputs = championIds.map((champId) => {
       const newTeam = selectedTeamIndex === 1 ? { ...team1 } : { ...team2 };
@@ -69,13 +88,13 @@ export async function POST(request: Request) {
           ...formatTeamData(selectedTeamIndex === 1 ? newTeam : team1),
           ...formatTeamData(selectedTeamIndex === 2 ? newTeam : team2),
         ],
-        numerical_elo: elo,
+        numerical_elo: isPro ? 0 : elo, // always 0 for pro TODO: this could be cleaner
         patch,
       };
     });
 
     // Make single batched request
-    const response = await fetch(`${backendUrl}/predict-batch`, {
+    const response = await fetch(`${targetUrl}/predict-batch`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

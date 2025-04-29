@@ -58,7 +58,10 @@ export const elos = [
   "diamond",
   "master +",
 ] as const;
-export type Elo = (typeof elos)[number];
+
+export const proElos = ["pro"] as const;
+
+export type Elo = (typeof elos)[number] | (typeof proElos)[number];
 
 export type SuggestionMode = "favorites" | "meta" | "all";
 export interface DetailedPrediction {

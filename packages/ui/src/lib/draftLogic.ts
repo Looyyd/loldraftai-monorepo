@@ -36,6 +36,7 @@ export const eloToNumerical = (elo: Elo): number => {
     emerald: 3,
     diamond: 1,
     "master +": 0,
+    pro: -1,
   };
   return eloMap[elo];
 };

@@ -22,7 +22,7 @@ import type {
   Elo,
   SuggestionMode,
 } from "@draftking/ui/lib/types";
-import { elos } from "@draftking/ui/lib/types";
+import { elos, proElos } from "@draftking/ui/lib/types";
 import { championIndexToFavoritesPosition } from "@draftking/ui/lib/types";
 import { SparklesIcon, LightBulbIcon } from "@heroicons/react/24/solid";
 import { LowPickrateWarning } from "./LowPickrateWarning";
@@ -62,14 +62,17 @@ interface AnalysisParentProps {
     suggestionMode: SuggestionMode;
   }>;
   setPatchList: (patches: string[]) => void;
+  isProAvailable?: boolean;
 }
 
 interface EloSelectProps {
   elo: Elo;
   setElo: (elo: Elo) => void;
+  isProAvailable: boolean;
 }
 
-const EloSelect = ({ elo, setElo }: EloSelectProps) => {
+const EloSelect = ({ elo, setElo, isProAvailable }: EloSelectProps) => {
+  const availableElos = isProAvailable ? proElos : elos;
   return (
     <Select value={elo} onValueChange={setElo}>
       <SelectTrigger className="w-[140px]">
@@ -77,7 +80,7 @@ const EloSelect = ({ elo, setElo }: EloSelectProps) => {
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {elos.map((eloOption) => (
+          {availableElos.map((eloOption) => (
             <SelectItem key={eloOption} value={eloOption}>
               {eloOption.toUpperCase()}
             </SelectItem>
@@ -138,6 +141,7 @@ export const AnalysisParent = ({
   BestChampionSuggestion,
   setPatchList,
   baseApiUrl,
+  isProAvailable = false,
 }: AnalysisParentProps) => {
   const [showChampionSuggestion, setShowChampionSuggestion] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
@@ -260,7 +264,11 @@ export const AnalysisParent = ({
         <div className="flex flex-col">
           <span className="text-xs text-neutral-500 mb-1 ml-1">Config</span>
           <div className="flex items-center gap-2 p-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
-            <EloSelect elo={elo} setElo={setElo} />
+            <EloSelect
+              elo={elo}
+              setElo={setElo}
+              isProAvailable={isProAvailable}
+            />
             <PatchSelect
               currentPatch={currentPatch}
               patches={patches}
