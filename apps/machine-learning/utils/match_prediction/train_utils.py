@@ -261,7 +261,7 @@ def init_model(
     num_champions: int,
     continue_training: bool,
     load_path: Optional[str] = None,
-    use_custom_init: bool = True,
+    use_custom_init: bool = False,
 ) -> Model:
     """Initialize the model with pre-initialized embeddings.
 
