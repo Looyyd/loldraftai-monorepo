@@ -62,11 +62,11 @@ class TrainingConfig:
 
         if continue_training:
             # Configuration for continued training (online learning)
-            self.learning_rate = 2e-4  # Lower LR for continued training (was 4e-4)
+            self.learning_rate = 4e-4  # Lower LR for continued training (was 4e-4)
             self.use_one_cycle_lr = False  # No one-cycle scheduler
         else:
             # Regular training configuration
-            self.learning_rate = 1e-4  # Reduced from 5e-3 to a more appropriate rate for transformer models
+            self.learning_rate = 1e-3  # Reduced from 5e-3 to a more appropriate rate for transformer models
             self.use_one_cycle_lr = True
             self.max_lr = self.learning_rate
             self.pct_start = 0.2

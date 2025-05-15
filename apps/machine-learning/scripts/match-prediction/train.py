@@ -75,7 +75,7 @@ def signal_handler(signum: int, frame: Any) -> None:
     exit(0)
 
 
-def apply_label_smoothing(labels: torch.Tensor, smoothing: float = 0.1) -> torch.Tensor:
+def apply_label_smoothing(labels: torch.Tensor, smoothing: float = 0.0) -> torch.Tensor:
     # Apply label smoothing
     return labels * (1 - smoothing) + 0.5 * smoothing
 
