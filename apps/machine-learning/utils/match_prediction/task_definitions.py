@@ -33,6 +33,10 @@ def get_win_prediction(df: pd.DataFrame) -> pd.Series:
     return df["team_100_win"]
 
 
+def get_game_duration(df: pd.DataFrame) -> pd.Series:
+    return df["gameDuration"]
+
+
 TASKS = {
     "win_prediction": TaskDefinition(
         name="win_prediction",
@@ -60,6 +64,13 @@ TASKS = {
         name="win_prediction_35_inf",
         task_type=TaskType.BINARY_CLASSIFICATION,
         weight=0.1,
+    ),
+    # TODO : added as a "hack" to make sure the column is added in the dataset, because needed for duration bucketing
+    "gameDuration": TaskDefinition(
+        name="gameDuration",
+        getter=get_game_duration,
+        task_type=TaskType.REGRESSION,
+        weight=0,
     ),
 }
 
