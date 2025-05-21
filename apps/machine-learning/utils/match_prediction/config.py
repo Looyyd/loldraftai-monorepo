@@ -8,7 +8,7 @@ class TrainingConfig:
     def __init__(self, continue_training: bool = False):
         # Default values
         self.num_epochs = 50
-        self.annealing_epoch = 10
+        self.annealing_epoch = 10  # number of epochs to use initial tasks, after that use final tasks(see task_definitions.py)
         self.hidden_dims = [1024, 512, 256, 128, 64]
         self.dropout = 0.5
         self.champion_patch_embed_dim = 4  # Small dimension to avoid overfitting
@@ -19,9 +19,6 @@ class TrainingConfig:
 
         # weight decay didn't change much when training for a short time at 0.001, but for longer trianing runs, 0.01 might be better
         self.weight_decay = 0.05
-        self.elo_reg_lambda = 0  # Weight for Elo regularization loss
-        self.patch_reg_lambda = 0  # Weight for patch regularization loss
-        self.champ_patch_reg_lambda = 0.0
         self.max_grad_norm = 1.0  # because has loss spikes after adding pos embeddings
         self.accumulation_steps = 1
         self.masking_strategy = {
@@ -38,6 +35,7 @@ class TrainingConfig:
             # Configuration for continued training (online learning)
             self.learning_rate = 4e-4  # Lower LR for continued training
             self.use_one_cycle_lr = False  # No one-cycle scheduler
+            self.annealing_epoch = 0  # immediatly use final tasks
         else:
             # Regular training configuration
             self.learning_rate = 8e-4
