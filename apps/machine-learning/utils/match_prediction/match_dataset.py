@@ -15,10 +15,7 @@ from utils.match_prediction import (
     PREPARED_DATA_DIR,
     SAMPLE_COUNTS_PATH,
     PARQUET_READER_BATCH_SIZE,
-    PATCH_MAPPING_PATH,
 )
-from utils.match_prediction.column_definitions import COLUMNS, ColumnType
-from utils.match_prediction.task_definitions import TASKS, TaskType
 from utils.match_prediction import get_best_device
 
 
@@ -64,7 +61,6 @@ class MatchDataset(IterableDataset):
         unknown_champion_id=None,
         train_or_test="train",
         dataset_fraction: float = 1.0,
-        patch_augmentation_prob: float = 0.0,
         reshuffle_fraction: bool = True,
     ):
         self.data_files = sorted(
@@ -76,7 +72,6 @@ class MatchDataset(IterableDataset):
         )
         self.dataset_fraction = dataset_fraction
         self.train_or_test = train_or_test
-        self.patch_augmentation_prob = patch_augmentation_prob
         self.reshuffle_fraction = reshuffle_fraction
         self.all_data_files = self.data_files.copy()
 
@@ -88,27 +83,6 @@ class MatchDataset(IterableDataset):
         self.total_samples = self._count_total_samples()
         self.masking_function = masking_function
         self.unknown_champion_id = unknown_champion_id
-
-        # Load patch mapping if patch augmentation is enabled
-        self.patch_mapping = None
-        self.min_patch = None
-        self.max_patch = None
-        if self.patch_augmentation_prob > 0.0:
-            try:
-                with open(PATCH_MAPPING_PATH, "rb") as f:
-                    patch_info = pickle.load(f)
-                self.patch_mapping = patch_info["mapping"]
-
-                # Find the min and max patch values from the mapping
-                patches = list(set(self.patch_mapping.values()))
-                self.min_patch = min(patches)
-                self.max_patch = max(patches)
-                print(
-                    f"Patch augmentation enabled: probability={self.patch_augmentation_prob}, min_patch={self.min_patch}, max_patch={self.max_patch}"
-                )
-            except Exception as e:
-                print(f"Warning: Could not load patch mapping for augmentation: {e}")
-                self.patch_augmentation_prob = 0.0
 
         # Shuffle the data files
         random.seed(42)  # For reproducibility
@@ -191,25 +165,6 @@ class MatchDataset(IterableDataset):
             df_chunk["champion_ids"] = df_chunk["champion_ids"].apply(
                 lambda x: self._mask_champions(x, self.masking_function())
             )
-
-        # Apply patch augmentation if enabled
-        if self.patch_augmentation_prob > 0.0 and self.patch_mapping is not None:
-            # Generate a random mask for rows that will have their patch augmented
-            mask = np.random.random(len(df_chunk)) < self.patch_augmentation_prob
-
-            if mask.any():
-                # For each selected row, randomly add -1 or +1 to the patch value
-                patch_changes = np.random.choice([-1, 1], size=mask.sum())
-
-                # Apply the changes to the masked rows
-                original_patches = df_chunk.loc[mask, "patch"].copy()
-                new_patches = original_patches + patch_changes
-
-                # Ensure patches stay within valid range
-                new_patches = np.clip(new_patches, self.min_patch, self.max_patch)
-
-                # Update the DataFrame with new patch values
-                df_chunk.loc[mask, "patch"] = new_patches
 
         # Convert champion_ids to tensor(expected by collate_fn)
         df_chunk["champion_ids"] = df_chunk["champion_ids"].apply(
