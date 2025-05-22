@@ -131,9 +131,9 @@ class FineTuningConfig:
         self.epoch_to_unfreeze = []  # Unfreeze one layer group at these epochs
 
         # Label smoothing options
-        self.use_label_smoothing = True  # Enable label smoothing
-        self.smooth_low = 0.2  # Value to smooth 0 labels to
-        self.smooth_high = 0.8  # Value to smooth 1 labels to
+        self.use_label_smoothing = False  # Enable label smoothing
+        self.smooth_low = 0  # Value to smooth 0 labels to
+        self.smooth_high = 1  # Value to smooth 1 labels to
 
         # Loss balancing parameters
         self.pro_loss_weight = 1.0  # Weight multiplier for pro data losses
@@ -935,7 +935,7 @@ def unfreeze_layer_group(model: Model, frozen_layers: int) -> int:
     Unfreeze the next group of layers in the model.
     Returns the new count of frozen layer groups.
     """
-    mlp_layers = list(model.mlp)
+    mlp_layers = list(model.mlp_layers)
     # Keep at least one layer group frozen
     if frozen_layers <= 1:
         print("Cannot unfreeze more layers: minimum of 1 frozen layer group required")
@@ -1010,7 +1010,7 @@ def fine_tune_model(
 
     # Freeze early MLP layers
     print(f"Freezing first {frozen_layers} MLP layer groups...")
-    mlp_layers = list(model.mlp)
+    mlp_layers = list(model.mlp_layers)
     layers_to_freeze = frozen_layers * 4
     for layer in mlp_layers[:layers_to_freeze]:
         print(f"Freezing layer: {layer}")
@@ -1487,7 +1487,7 @@ def validate_with_masking_levels(
 
     # Test with different numbers of masked champions
     for num_masked in range(1, 11):  # 1 to 10 masked champions
-        np.random.seed(42 + num_masked)  # <--- Add this line for deterministic masking
+        np.random.seed(42 + num_masked)
 
         # Create dataset with specific number of masked champions
         val_masked_dataset = ProMatchDataset(
