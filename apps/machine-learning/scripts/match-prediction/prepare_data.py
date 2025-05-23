@@ -4,6 +4,8 @@
 # - Creates train/test split
 # - Creates encoders for categorical columns and normalizes numerical columns
 # (normalization is important, especially with auxiliary tasks, to avoid tasks losses having different scales)
+# The main goal of preparing data like this is: it makes training loop simpler, and more efficient because data preparation was a bottleneck, especially when using many aux tasks.
+# And the same data can then easily be used in train.py and train_pro.py.
 import os
 import glob
 import pickle
@@ -29,6 +31,10 @@ from utils.match_prediction.column_definitions import (
 from utils.match_prediction.task_definitions import TASKS, TaskType
 from typing import List, Dict, Tuple
 from collections import defaultdict
+import multiprocessing as mp
+from functools import partial
+import gc
+import psutil
 
 # Constants
 NUM_RECENT_PATCHES = 52  # Number of most recent patches to use for training
@@ -43,12 +49,31 @@ MIN_CS_15MIN_NORMAL = 25  # Minimum CS at 15 minutes for non-support roles
 MIN_LEVEL_15MIN = 4  # Minimum level at 15 minutes
 
 
+def process_champion_ids(file_path: str) -> set:
+    """Process a single file to extract unique champion IDs"""
+    df = pd.read_parquet(file_path)
+    return set(df["champion_ids"].explode().unique())
+
+
 def create_champion_id_encoder(data_files: List[str]) -> LabelEncoder:
+    """Create encoder for champion_ids using parallel processing"""
     print(f"Creating encoder for champion_ids")
+
+    # Use multiprocessing to process files in parallel
+    num_cores = max(1, mp.cpu_count() - 1)  # Leave one core free
+    with mp.Pool(num_cores) as pool:
+        results = list(
+            tqdm(
+                pool.imap(process_champion_ids, data_files),
+                total=len(data_files),
+                desc="Processing champion_ids",
+            )
+        )
+
+    # Combine all unique values
     unique_values = set()
-    for file_path in tqdm(data_files, desc="Processing champion_ids"):
-        df = pd.read_parquet(file_path)
-        unique_values.update(df["champion_ids"].explode().unique())
+    for result in results:
+        unique_values.update(result)
 
     unique_values = sorted(unique_values)
     unique_values.append("UNKNOWN")
@@ -59,7 +84,12 @@ def create_champion_id_encoder(data_files: List[str]) -> LabelEncoder:
     return encoder
 
 
-def compute_task_stats(data_files):
+def process_task_stats(
+    file_path: str,
+) -> Tuple[Dict[str, float], Dict[str, float], int]:
+    """Process a single file to compute task statistics"""
+    df = pd.read_parquet(file_path)
+
     task_sums = {
         task: 0.0
         for task, task_def in TASKS.items()
@@ -70,31 +100,72 @@ def compute_task_stats(data_files):
         for task, task_def in TASKS.items()
         if task_def.task_type == TaskType.REGRESSION
     }
+
+    for task, task_def in TASKS.items():
+        if task_def.task_type == TaskType.REGRESSION:
+            task_sums[task] = df[task].sum()
+            task_sumsq[task] = (df[task] ** 2).sum()
+
+    return task_sums, task_sumsq, len(df)
+
+
+def compute_task_stats(data_files):
+    """Compute task statistics using parallel processing"""
+    # Use multiprocessing to process files in parallel
+    num_cores = max(1, mp.cpu_count() - 1)  # Leave one core free
+    with mp.Pool(num_cores) as pool:
+        results = list(
+            tqdm(
+                pool.imap(process_task_stats, data_files),
+                total=len(data_files),
+                desc="Computing stats",
+            )
+        )
+
+    # Combine results
+    total_task_sums = {
+        task: 0.0
+        for task, task_def in TASKS.items()
+        if task_def.task_type == TaskType.REGRESSION
+    }
+    total_task_sumsq = {
+        task: 0.0
+        for task, task_def in TASKS.items()
+        if task_def.task_type == TaskType.REGRESSION
+    }
     total_count = 0
 
-    for file_path in tqdm(data_files, desc="Computing stats"):
-        df = pd.read_parquet(file_path)
+    for task_sums, task_sumsq, count in results:
+        for task in total_task_sums:
+            total_task_sums[task] += task_sums[task]
+            total_task_sumsq[task] += task_sumsq[task]
+        total_count += count
 
-        for task, task_def in TASKS.items():
-            if task_def.task_type == TaskType.REGRESSION:
-                task_sums[task] += df[task].sum()
-                task_sumsq[task] += (df[task] ** 2).sum()
-        total_count += len(df)
-
-    task_means = {task: task_sums[task] / total_count for task in task_sums}
+    # Compute final statistics
+    task_means = {task: total_task_sums[task] / total_count for task in total_task_sums}
     task_stds = {
-        task: np.sqrt((task_sumsq[task] / total_count) - (task_means[task] ** 2))
-        for task in task_sums
+        task: np.sqrt((total_task_sumsq[task] / total_count) - (task_means[task] ** 2))
+        for task in total_task_sums
     }
 
     return task_means, task_stds
+
+
+def process_patch_counts(file_path: str) -> Dict[float, int]:
+    """Process a single file to compute patch counts"""
+    df = pd.read_parquet(file_path)
+    raw_patches = get_patch_from_raw_data(df)
+    patch_counts = defaultdict(int)
+    for patch in raw_patches:
+        patch_counts[patch] += 1
+    return dict(patch_counts)
 
 
 def compute_patch_mapping(
     input_files: List[str], next_patch_test: bool = False
 ) -> Dict[float, int]:
     """
-    Analyze all files to create a mapping for patch numbers.
+    Analyze all files to create a mapping for patch numbers using parallel processing.
     Takes the NUM_RECENT_PATCHES most recent patches, mapping any patch with <200k games to the previous patch.
 
     If next_patch_test is True:
@@ -103,14 +174,25 @@ def compute_patch_mapping(
 
     Returns a dictionary mapping original patch numbers to normalized ones (1-NUM_RECENT_PATCHES).
     """
-    patch_counts = defaultdict(int)
-
     print("Computing patch distribution...")
-    for file_path in tqdm(input_files):
-        df = pd.read_parquet(file_path)
-        raw_patches = get_patch_from_raw_data(df)
-        for patch in raw_patches:
-            patch_counts[patch] += 1
+
+    # Use multiprocessing to process files in parallel
+    num_cores = max(1, mp.cpu_count() - 1)  # Leave one core free
+    with mp.Pool(num_cores) as pool:
+        results = list(
+            tqdm(
+                pool.imap(process_patch_counts, input_files),
+                total=len(input_files),
+                desc="Processing patches",
+            )
+        )
+
+    # Combine results
+    patch_counts = defaultdict(int)
+    for result in results:
+        for patch, count in result.items():
+            patch_counts[patch] += count
+
     # All patches in chronological order
     all_patches = sorted(patch_counts.keys())
 
@@ -175,12 +257,13 @@ def compute_patch_mapping(
         status = " (test set)" if is_test else ""
         print(f"Patch {patch} -> {mapped_value}{status} ({patch_counts[patch]} games)")
 
-    return patch_mapping, patch_counts
+    return patch_mapping, dict(patch_counts)
 
 
 def filter_outliers(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
     """
     Filter out games with potential griefers/AFKs based on specified rules.
+    Uses vectorized operations for better performance.
     """
     filter_counts = {
         "original_count": len(df),
@@ -194,88 +277,69 @@ def filter_outliers(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
     roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
     teams = [100, 200]
 
-    # 1. Gold filter
-    gold_filter_conditions = []
-    for role in roles:
-        for team in teams:
-            col = f"team_{team}_{role}_totalGold_at_900000"
-            if col in df.columns:
-                condition = df[col] < MIN_GOLD_15MIN
-                gold_filter_conditions.append(condition)
+    # Pre-compute column names for better performance
+    gold_cols = [
+        f"team_{team}_{role}_totalGold_at_900000" for role in roles for team in teams
+    ]
+    deaths_cols = [
+        f"team_{team}_{role}_deaths_at_900000" for role in roles for team in teams
+    ]
+    cs_cols = [
+        f"team_{team}_{role}_creepScore_at_900000"
+        for role in roles
+        if role != "UTILITY"
+        for team in teams
+    ]
+    level_cols = [
+        f"team_{team}_{role}_level_at_900000" for role in roles for team in teams
+    ]
 
-    if gold_filter_conditions:
-        gold_filter = pd.concat(gold_filter_conditions, axis=1).any(axis=1)
-        filter_counts["gold_filter"] = gold_filter.sum()
-        df = df[~gold_filter]
+    # 1. Gold filter - vectorized operation
+    gold_mask = df[gold_cols].min(axis=1) >= MIN_GOLD_15MIN
+    filter_counts["gold_filter"] = (~gold_mask).sum()
+    df = df[gold_mask]
 
-    # 2. Deaths filter
-    deaths_filter_conditions = []
-    for role in roles:
-        for team in teams:
-            col = f"team_{team}_{role}_deaths_at_900000"
-            if col in df.columns:
-                condition = df[col] > MAX_DEATHS_15MIN
-                deaths_filter_conditions.append(condition)
+    # 2. Deaths filter - vectorized operation
+    deaths_mask = df[deaths_cols].max(axis=1) <= MAX_DEATHS_15MIN
+    filter_counts["deaths_filter"] = (~deaths_mask).sum()
+    df = df[deaths_mask]
 
-    if deaths_filter_conditions:
-        deaths_filter = pd.concat(deaths_filter_conditions, axis=1).any(axis=1)
-        filter_counts["deaths_filter"] = deaths_filter.sum()
-        df = df[~deaths_filter]
+    # 3. CS filter - vectorized operation
+    cs_mask = df[cs_cols].min(axis=1) >= MIN_CS_15MIN_NORMAL
+    filter_counts["cs_filter_normal"] = (~cs_mask).sum()
+    df = df[cs_mask]
 
-    # 3. CS filter
-    cs_filter_normal_conditions = []
-    for role in roles:
-        if role != "UTILITY":
-            for team in teams:
-                col = f"team_{team}_{role}_creepScore_at_900000"
-                if col in df.columns:
-                    condition = df[col] < MIN_CS_15MIN_NORMAL
-                    cs_filter_normal_conditions.append(condition)
-
-    if cs_filter_normal_conditions:
-        cs_filter_normal = pd.concat(cs_filter_normal_conditions, axis=1).any(axis=1)
-        filter_counts["cs_filter_normal"] = cs_filter_normal.sum()
-        df = df[~cs_filter_normal]
-
-    # 4. Level filter
-    level_filter_conditions = []
-    for role in roles:
-        for team in teams:
-            col = f"team_{team}_{role}_level_at_900000"
-            if col in df.columns:
-                condition = df[col] < MIN_LEVEL_15MIN
-                level_filter_conditions.append(condition)
-
-    if level_filter_conditions:
-        level_filter = pd.concat(level_filter_conditions, axis=1).any(axis=1)
-        filter_counts["level_filter"] = level_filter.sum()
-        df = df[~level_filter]
+    # 4. Level filter - vectorized operation
+    level_mask = df[level_cols].min(axis=1) >= MIN_LEVEL_15MIN
+    filter_counts["level_filter"] = (~level_mask).sum()
+    df = df[level_mask]
 
     # Print summary using tqdm.write
     total_filtered = original_count - len(df)
-    summary = [
-        f"Filtering summary:",
-        f"├─ Gold filter: {filter_counts['gold_filter']:,d} rows",
-        f"├─ Deaths filter: {filter_counts['deaths_filter']:,d} rows",
-        f"├─ CS filter: {filter_counts['cs_filter_normal']:,d} rows",
-        f"├─ Level filter: {filter_counts['level_filter']:,d} rows",
-        f"└─ Total: {total_filtered:,d} rows ({total_filtered/original_count*100:.1f}%)",
-    ]
     if DEBUG:
+        summary = [
+            f"Filtering summary:",
+            f"├─ Gold filter: {filter_counts['gold_filter']:,d} rows",
+            f"├─ Deaths filter: {filter_counts['deaths_filter']:,d} rows",
+            f"├─ CS filter: {filter_counts['cs_filter_normal']:,d} rows",
+            f"├─ Level filter: {filter_counts['level_filter']:,d} rows",
+            f"└─ Total: {total_filtered:,d} rows ({total_filtered/original_count*100:.1f}%)",
+        ]
         tqdm.write("\n".join(summary))
 
     return df, filter_counts
 
 
-def prepare_data(
+def prepare_data_optimized(
     input_files,
     output_dir,
     champion_encoder: LabelEncoder,
     task_means,
     task_stds,
-    target_file_size: int = 50000,  # Target number of rows per output file
+    target_file_size: int = 50000,
     next_patch_test: bool = False,
 ):
+    """Optimized version of prepare_data with better performance"""
     os.makedirs(os.path.join(output_dir, "train"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "test"), exist_ok=True)
 
@@ -284,6 +348,7 @@ def prepare_data(
         for file_path in glob.glob(os.path.join(output_dir, folder, "*.parquet")):
             os.remove(file_path)
 
+    # Use more efficient data structures for buffers
     train_buffer = []
     test_buffer = []
     train_file_counter = 0
@@ -291,7 +356,7 @@ def prepare_data(
     train_count = 0
     test_count = 0
 
-    def write_buffer(buffer, is_train: bool, file_counter: int):
+    def write_buffer_optimized(buffer, is_train: bool, file_counter: int):
         if not buffer:
             return file_counter
 
@@ -300,8 +365,10 @@ def prepare_data(
             output_dir, file_prefix, f"{file_prefix}_{file_counter:04d}.parquet"
         )
 
+        # Convert buffer to DataFrame more efficiently
         df = pd.DataFrame(buffer)
-        df.to_parquet(output_path, index=False)
+        # Use optimized parquet settings for faster writes
+        df.to_parquet(output_path, index=False, compression="snappy", engine="pyarrow")
         return file_counter + 1
 
     # Load patch mapping to identify recent patches
@@ -317,137 +384,159 @@ def prepare_data(
         recent_patches = all_patches[-2:]
         print(f"Using patches {recent_patches} for test set (future patch evaluation)")
 
+    # Pre-compute task lists for efficiency
+    regression_tasks = [
+        task
+        for task, task_def in TASKS.items()
+        if task_def.task_type == TaskType.REGRESSION
+    ]
+    binary_tasks = [
+        task
+        for task, task_def in TASKS.items()
+        if task_def.task_type == TaskType.BINARY_CLASSIFICATION
+        and not task.startswith("win_prediction_")
+    ]
+
     # Shuffle input files for better data distribution
-    rng = np.random.default_rng(42)  # Use seeded RNG for reproducibility
+    rng = np.random.default_rng(42)
     rng.shuffle(input_files)
 
-    for file_index, file_path in enumerate(tqdm(input_files, desc="Preparing data")):
-        old_df = pd.read_parquet(file_path)
+    # Process files in batches for better memory management
+    batch_size = 20  # Process multiple files at once for efficiency
+    for batch_start in range(0, len(input_files), batch_size):
+        batch_files = input_files[batch_start : batch_start + batch_size]
 
-        # Create empty DataFrame with all columns pre-allocated with correct types
-        column_dtypes = {
-            # Categorical columns are integers
-            **{col: "int32" for col in KNOWN_CATEGORICAL_COLUMNS_NAMES},
-            # Special columns
-            "patch": "int32",
-            "champion_ids": "object",  # array of ints needs object dtype
-            # All tasks are floats, excluding bucketed win prediction tasks
-            **{
-                task: "float32"
-                for task, task_def in TASKS.items()
-                if not task.startswith("win_prediction_")
-            },
-        }
+        # Read and process multiple files together
+        batch_dfs = []
+        for file_path in batch_files:
+            try:
+                df = pd.read_parquet(file_path)
+                if len(df) > 1:
+                    batch_dfs.append((df, file_path))
+            except Exception as e:
+                print(f"Error reading {file_path}: {e}")
+                continue
 
-        new_df = pd.DataFrame(
-            # Initialize with NaN for float columns, 0 for int columns
-            {
-                col: np.zeros(len(old_df), dtype=dtype)
-                for col, dtype in column_dtypes.items()
-            }
-        )
-
-        if len(old_df) <= 1:
-            print(
-                f"Skipping file {file_path} - insufficient samples ({len(old_df)} rows)"
-            )
+        if not batch_dfs:
             continue
 
-        # Apply all the column processing from the original code
-        new_df[KNOWN_CATEGORICAL_COLUMNS_NAMES] = old_df[
-            KNOWN_CATEGORICAL_COLUMNS_NAMES
-        ].astype("int32")
-        new_df["patch"] = old_df["patch"].astype("int32")
-        new_df["champion_ids"] = old_df["champion_ids"].apply(
-            lambda x: champion_encoder.transform(x)
-        )
+        # Process the batch
+        # TODO: make intra batch progress updates better, right now it updates only when finished
+        for old_df, file_path in tqdm(
+            batch_dfs,
+            desc=f"Processing batch {batch_start//batch_size + 1}/{(len(input_files) + batch_size - 1)//batch_size}",
+        ):
+            # Pre-allocate new DataFrame with correct dtypes
+            num_rows = len(old_df)
 
-        # Process regression tasks
-        regression_tasks = [
-            task
-            for task, task_def in TASKS.items()
-            if task_def.task_type == TaskType.REGRESSION
-        ]
-        for task in regression_tasks:
-            if task_stds[task] != 0:
-                new_df[task] = (
-                    (old_df[task] - task_means[task]) / task_stds[task]
-                ).astype("float32")
+            # Create new DataFrame more efficiently using dict comprehension
+            new_data = {}
+
+            # Copy categorical columns directly with proper dtype
+            for col in KNOWN_CATEGORICAL_COLUMNS_NAMES:
+                new_data[col] = old_df[col].astype("int32", copy=False)
+
+            # Handle patch column
+            new_data["patch"] = old_df["patch"].astype("int32", copy=False)
+
+            # Process champion_ids more efficiently using vectorized operations
+            champion_ids_transformed = old_df["champion_ids"].apply(
+                lambda x: champion_encoder.transform(x)
+            )
+            new_data["champion_ids"] = champion_ids_transformed
+
+            # Vectorized processing of regression tasks
+            for task in regression_tasks:
+                if task in old_df.columns:
+                    if task_stds[task] != 0:
+                        new_data[task] = (
+                            (old_df[task] - task_means[task]) / task_stds[task]
+                        ).astype("float32", copy=False)
+                    else:
+                        new_data[task] = (old_df[task] - task_means[task]).astype(
+                            "float32", copy=False
+                        )
+
+            # Vectorized processing of binary classification tasks
+            for task in binary_tasks:
+                if task == "win_prediction":
+                    new_data[task] = old_df["team_100_win"].astype(
+                        "float32", copy=False
+                    )
+                elif task in old_df.columns:
+                    new_data[task] = old_df[task].astype("float32", copy=False)
+
+            # Create DataFrame from dict (more efficient than pre-allocation)
+            new_df = pd.DataFrame(new_data)
+
+            # Handle train/test split more efficiently
+            if next_patch_test:
+                raw_patches = get_patch_from_raw_data(old_df)
+                if any(patch in recent_patches for patch in raw_patches.unique()):
+                    is_recent_patch = raw_patches.isin(recent_patches)
+
+                    if is_recent_patch.any():
+                        test_rows = new_df[is_recent_patch]
+                        test_buffer.extend(test_rows.to_dict("records"))
+                        test_count += len(test_rows)
+
+                    if (~is_recent_patch).any():
+                        train_rows = new_df[~is_recent_patch]
+                        train_buffer.extend(train_rows.to_dict("records"))
+                        train_count += len(train_rows)
+                else:
+                    train_buffer.extend(new_df.to_dict("records"))
+                    train_count += len(new_df)
             else:
-                new_df[task] = (old_df[task] - task_means[task]).astype("float32")
+                # More efficient train/test split
+                if len(new_df) < 10:
+                    train_data = new_df.iloc[:-1].to_dict("records")
+                    test_data = new_df.iloc[-1:].to_dict("records")
+                else:
+                    # Use numpy for faster splitting
+                    indices = np.arange(len(new_df))
+                    rng.shuffle(indices)
+                    split_idx = int(len(new_df) * 0.9)
 
-        # Process binary classification tasks
-        binary_tasks = [
-            task
-            for task, task_def in TASKS.items()
-            if task_def.task_type == TaskType.BINARY_CLASSIFICATION
-            and not task.startswith("win_prediction_")  # Skip bucketed tasks
-        ]
-        for task in binary_tasks:
-            if task == "win_prediction":
-                new_df[task] = old_df["team_100_win"].astype("float32")
-            else:
-                new_df[task] = old_df[task].astype("float32")
+                    train_indices = indices[:split_idx]
+                    test_indices = indices[split_idx:]
 
-        # If next_patch_test is True, handle special test set creation
-        if next_patch_test:
-            # Get raw patches to identify most recent ones
-            raw_patches = get_patch_from_raw_data(old_df)
+                    train_data = new_df.iloc[train_indices].to_dict("records")
+                    test_data = new_df.iloc[test_indices].to_dict("records")
 
-            # Check if this file contains data from the 2 most recent patches
-            if any(patch in recent_patches for patch in raw_patches.unique()):
-                # For files with recent patch data, check each row
-                is_recent_patch = raw_patches.isin(recent_patches)
+                train_buffer.extend(train_data)
+                test_buffer.extend(test_data)
+                train_count += len(train_data)
+                test_count += len(test_data)
 
-                # Add data from recent patches to test set
-                if is_recent_patch.any():
-                    test_rows = new_df[is_recent_patch]
-                    test_buffer.extend(test_rows.to_dict("records"))
-                    test_count += len(test_rows)
-
-                # Add all other data to train set
-                if (~is_recent_patch).any():
-                    train_rows = new_df[~is_recent_patch]
-                    train_buffer.extend(train_rows.to_dict("records"))
-                    train_count += len(train_rows)
-            else:
-                # Files without recent patch data go entirely to train set
-                train_buffer.extend(new_df.to_dict("records"))
-                train_count += len(new_df)
-        else:
-            # Original train/test split logic
-            if len(new_df) < 10:
-                df_train = new_df.iloc[:-1]
-                df_test = new_df.iloc[-1:]
-            else:
-                df_train, df_test = train_test_split(
-                    new_df, test_size=0.1, random_state=42
+            # Write buffers if they exceed target size
+            if len(train_buffer) >= target_file_size:
+                train_file_counter = write_buffer_optimized(
+                    train_buffer, True, train_file_counter
                 )
+                train_buffer = []
 
-            # Add to buffers
-            train_buffer.extend(df_train.to_dict("records"))
-            test_buffer.extend(df_test.to_dict("records"))
+            if len(test_buffer) >= target_file_size:
+                test_file_counter = write_buffer_optimized(
+                    test_buffer, False, test_file_counter
+                )
+                test_buffer = []
 
-            train_count += len(df_train)
-            test_count += len(df_test)
+            # Clean up memory
+            del old_df, new_df
 
-        # Write buffers if they exceed target size
-        if len(train_buffer) >= target_file_size:
-            train_file_counter = write_buffer(train_buffer, True, train_file_counter)
-            train_buffer = []
-
-        if len(test_buffer) >= target_file_size:
-            test_file_counter = write_buffer(test_buffer, False, test_file_counter)
-            test_buffer = []
-
-        # Clear memory
-        del old_df, new_df
+        # Force garbage collection after each batch
+        gc.collect()
 
     # Write remaining buffers
     if train_buffer:
-        train_file_counter = write_buffer(train_buffer, True, train_file_counter)
+        train_file_counter = write_buffer_optimized(
+            train_buffer, True, train_file_counter
+        )
     if test_buffer:
-        test_file_counter = write_buffer(test_buffer, False, test_file_counter)
+        test_file_counter = write_buffer_optimized(
+            test_buffer, False, test_file_counter
+        )
 
     # Save sample counts
     with open(SAMPLE_COUNTS_PATH, "wb") as f:
@@ -465,146 +554,586 @@ def prepare_data(
     )
 
 
-def add_computed_columns(
-    input_files: List[str], output_dir: str, next_patch_test: bool = False
-) -> List[str]:
-    """
-    Add computed columns to parquet files and save them to a new directory.
-    Only includes games from the last NUM_RECENT_PATCHES patches and
-    where matchId prefix matches the region.
-    Returns the list of new file paths.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    new_files = []
+# Keep the original function but replace it with the optimized version
+def prepare_data(
+    input_files,
+    output_dir,
+    champion_encoder: LabelEncoder,
+    task_means,
+    task_stds,
+    target_file_size: int = 50000,
+    next_patch_test: bool = False,
+):
+    """Wrapper that calls the optimized version"""
+    return prepare_data_optimized(
+        input_files,
+        output_dir,
+        champion_encoder,
+        task_means,
+        task_stds,
+        target_file_size,
+        next_patch_test,
+    )
 
-    # First, compute the patch mapping from the entire dataset
-    patch_mapping, patch_counts = compute_patch_mapping(input_files, next_patch_test)
 
-    # Save the patch mapping and counts for future reference
-    with open(PATCH_MAPPING_PATH, "wb") as f:
-        pickle.dump(
-            {
-                "mapping": patch_mapping,
-                "counts": patch_counts,
-                "next_patch_test": next_patch_test,
-            },
-            f,
-        )
+def process_file_complete(
+    args: Tuple[str, Dict[float, int], str, bool, LabelEncoder, Dict, Dict, bool],
+) -> Tuple[bool, Dict[str, int], str, int, int]:
+    """Process a single file completely and save directly to train or test directory"""
+    (
+        file_path,
+        patch_mapping,
+        output_dir,
+        next_patch_test,
+        champion_encoder,
+        task_means,
+        task_stds,
+        is_train_file,
+    ) = args
 
-    # Track cumulative stats
-    cumulative_stats = {
-        "total_raw": 0,  # Total games before any filtering
-        "region_mismatch": 0,  # Games filtered due to region mismatch
-        "patch_filtered": 0,  # Games filtered due to old patches
-        "processed_in_patch": 0,  # Games processed after patch filtering
-        "filtered": 0,
-        "gold_filter": 0,
-        "deaths_filter": 0,
-        "cs_filter_normal": 0,
-        "level_filter": 0,
-    }
-
-    pbar = tqdm(input_files, desc="Adding computed columns")
-    for file_path in pbar:
+    try:
+        # Read the raw file
         df = pd.read_parquet(file_path)
         original_count = len(df)
-        cumulative_stats["total_raw"] += original_count
 
-        # Filter out games where matchId prefix doesn't match region
+        if len(df) <= 1:
+            return (
+                False,
+                {"total_raw": original_count, "final_count": 0},
+                file_path,
+                0,
+                0,
+            )
+
+        # Filter out games where matchId prefix doesn't match region(to fix duplicate rows, because of an resolved issue in data collection)
         df["match_prefix"] = df["matchId"].str.split("_").str[0]
         region_match_mask = df["match_prefix"] == df["region"]
-        region_mismatch_count = (~region_match_mask).sum()
-        cumulative_stats["region_mismatch"] += region_mismatch_count
         df = df[region_match_mask]
-        df = df.drop("match_prefix", axis=1)  # Clean up temporary column
+        df.drop("match_prefix", axis=1, inplace=True)
 
-        # Skip if no data left after region filtering
         if len(df) == 0:
-            continue
+            return (
+                False,
+                {
+                    "total_raw": original_count,
+                    "region_mismatch": original_count,
+                    "final_count": 0,
+                },
+                file_path,
+                0,
+                0,
+            )
 
-        # Calculate raw patch numbers
+        # Calculate raw patch numbers and filter
         raw_patches = get_patch_from_raw_data(df)
-
-        # Filter for games only in the patch mapping (last NUM_RECENT_PATCHES patches)
         df["patch"] = raw_patches.map(lambda x: patch_mapping.get(x, 0))
-        df = df[df["patch"] > 0]  # Remove games from old patches
+        df = df[df["patch"] > 0]
 
-        # Track how many games were filtered due to patches
-        cumulative_stats["patch_filtered"] += (
-            original_count - region_mismatch_count - len(df)
-        )
-
-        # Skip empty dataframes
         if len(df) == 0:
-            continue
+            return (
+                False,
+                {
+                    "total_raw": original_count,
+                    "patch_filtered": len(df),
+                    "final_count": 0,
+                },
+                file_path,
+                0,
+                0,
+            )
 
-        # Track games that are in the valid patch range
-        games_in_patch = len(df)
-        cumulative_stats["processed_in_patch"] += games_in_patch
-
+        # Apply filters
         df, filter_counts = filter_outliers(df)
 
-        # Update cumulative stats (only for games within patch range)
-        cumulative_stats["filtered"] += games_in_patch - len(df)
-        for key in ["gold_filter", "deaths_filter", "cs_filter_normal", "level_filter"]:
-            cumulative_stats[key] += filter_counts[key]
-
-        # Update progress bar description with cumulative stats
-        filtered_pct = (
-            (
-                cumulative_stats["filtered"]
-                / cumulative_stats["processed_in_patch"]
-                * 100
-            )
-            if cumulative_stats["processed_in_patch"] > 0
-            else 0
-        )
-        region_mismatch_pct = (
-            cumulative_stats["region_mismatch"] / cumulative_stats["total_raw"] * 100
-        )
-        pbar.set_description(
-            f"Processed: {cumulative_stats['processed_in_patch']:,d} | Region mismatch: {region_mismatch_pct:.1f}% | Filtered: {filtered_pct:.1f}%"
-        )
-
-        # Skip if no data left after filtering
         if len(df) <= 1:
-            continue
+            return (False, {**filter_counts, "final_count": len(df)}, file_path, 0, 0)
 
         # Apply all getters to create new columns
         for col, col_def in COLUMNS.items():
             if col_def.getter is not None:
                 df[col] = col_def.getter(df)
+
         for task, task_def in TASKS.items():
             if task_def.getter is not None:
                 df[task] = task_def.getter(df)
 
-        # Save the enhanced dataframe
-        new_file_path = os.path.join(output_dir, os.path.basename(file_path))
-        df.to_parquet(new_file_path, index=False)
-        new_files.append(new_file_path)
+        # Now transform the data for ML (encoders, normalization, etc.)
+        new_data = {}
 
-        # Clear memory
-        del df
+        # Copy categorical columns with proper dtype
+        for col in KNOWN_CATEGORICAL_COLUMNS_NAMES:
+            if col in df.columns:
+                new_data[col] = df[col].astype("int32", copy=False)
 
-    # Print final cumulative stats using tqdm.write
+        # Handle patch column
+        new_data["patch"] = df["patch"].astype("int32", copy=False)
+
+        # Process champion_ids
+        if "champion_ids" in df.columns:
+            new_data["champion_ids"] = df["champion_ids"].apply(
+                lambda x: champion_encoder.transform(x)
+            )
+
+        # Process regression tasks
+        regression_tasks = [
+            task
+            for task, task_def in TASKS.items()
+            if task_def.task_type == TaskType.REGRESSION
+        ]
+        for task in regression_tasks:
+            if task in df.columns:
+                if task_stds[task] != 0:
+                    new_data[task] = (
+                        (df[task] - task_means[task]) / task_stds[task]
+                    ).astype("float32", copy=False)
+                else:
+                    new_data[task] = (df[task] - task_means[task]).astype(
+                        "float32", copy=False
+                    )
+
+        # Process binary classification tasks
+        binary_tasks = [
+            task
+            for task, task_def in TASKS.items()
+            if task_def.task_type == TaskType.BINARY_CLASSIFICATION
+            and not task.startswith("win_prediction_")
+        ]
+        for task in binary_tasks:
+            if task == "win_prediction":
+                new_data[task] = df["team_100_win"].astype("float32", copy=False)
+            elif task in df.columns:
+                new_data[task] = df[task].astype("float32", copy=False)
+
+        # Create final DataFrame
+        final_df = pd.DataFrame(new_data)
+
+        # Handle train/test split
+        train_count = 0
+        test_count = 0
+
+        if next_patch_test:
+            # Use patch-based splitting for next_patch_test
+            raw_patches = get_patch_from_raw_data(df)
+
+            # Get recent patches from the patch mapping we already have
+            all_patches = sorted(patch_mapping.keys())
+            recent_patches = all_patches[-2:]
+
+            if any(patch in recent_patches for patch in raw_patches.unique()):
+                is_recent_patch = raw_patches.isin(recent_patches)
+
+                if is_recent_patch.any():
+                    test_df = final_df[is_recent_patch]
+                    test_output_path = os.path.join(
+                        output_dir, "test", os.path.basename(file_path)
+                    )
+                    test_df.to_parquet(
+                        test_output_path,
+                        index=False,
+                        compression="snappy",
+                        engine="pyarrow",
+                    )
+                    test_count = len(test_df)
+
+                if (~is_recent_patch).any():
+                    train_df = final_df[~is_recent_patch]
+                    train_output_path = os.path.join(
+                        output_dir, "train", os.path.basename(file_path)
+                    )
+                    train_df.to_parquet(
+                        train_output_path,
+                        index=False,
+                        compression="snappy",
+                        engine="pyarrow",
+                    )
+                    train_count = len(train_df)
+            else:
+                # All data goes to train
+                train_output_path = os.path.join(
+                    output_dir, "train", os.path.basename(file_path)
+                )
+                final_df.to_parquet(
+                    train_output_path,
+                    index=False,
+                    compression="snappy",
+                    engine="pyarrow",
+                )
+                train_count = len(final_df)
+        else:
+            # File-level train/test split
+            if is_train_file:
+                train_output_path = os.path.join(
+                    output_dir, "train", os.path.basename(file_path)
+                )
+                final_df.to_parquet(
+                    train_output_path,
+                    index=False,
+                    compression="snappy",
+                    engine="pyarrow",
+                )
+                train_count = len(final_df)
+            else:
+                test_output_path = os.path.join(
+                    output_dir, "test", os.path.basename(file_path)
+                )
+                final_df.to_parquet(
+                    test_output_path,
+                    index=False,
+                    compression="snappy",
+                    engine="pyarrow",
+                )
+                test_count = len(final_df)
+
+        # Clean up memory
+        del df, final_df
+        gc.collect()
+
+        return (
+            True,
+            {**filter_counts, "final_count": train_count + test_count},
+            file_path,
+            train_count,
+            test_count,
+        )
+
+    except Exception as e:
+        print(f"Error processing file {file_path}: {str(e)}")
+        gc.collect()
+        return (
+            False,
+            {"total_raw": 0, "error": str(e), "final_count": 0},
+            file_path,
+            0,
+            0,
+        )
+
+
+def prepare_data_single_pass(
+    input_files,
+    output_dir,
+    champion_encoder: LabelEncoder,
+    task_means,
+    task_stds,
+    next_patch_test: bool = False,
+):
+    """Ultra-fast single-pass data preparation with file-level train/test split"""
+    os.makedirs(os.path.join(output_dir, "train"), exist_ok=True)
+    os.makedirs(os.path.join(output_dir, "test"), exist_ok=True)
+
+    # Clean up existing files
+    for folder in ["train", "test"]:
+        for file_path in glob.glob(os.path.join(output_dir, folder, "*.parquet")):
+            os.remove(file_path)
+
+    # Load patch mapping
+    with open(PATCH_MAPPING_PATH, "rb") as f:
+        patch_mapping = pickle.load(f)["mapping"]
+
+    # Prepare arguments for parallel processing
+    all_args = []
+
+    if next_patch_test:
+        # For next_patch_test, process all files (splitting happens within files by patch)
+        print("Using patch-based train/test split (processing all files)")
+        for file_path in input_files:
+            all_args.append(
+                (
+                    file_path,
+                    patch_mapping,
+                    output_dir,
+                    next_patch_test,
+                    champion_encoder,
+                    task_means,
+                    task_stds,
+                    True,  # dummy value, not used for next_patch_test
+                )
+            )
+    else:
+        # For normal mode, do file-level train/test split
+        rng = np.random.default_rng(42)  # Reproducible
+        shuffled_files = input_files.copy()
+        rng.shuffle(shuffled_files)
+
+        # 90/10 split at file level
+        train_file_count = int(len(shuffled_files) * 0.9)
+        train_files = shuffled_files[:train_file_count]
+        test_files = shuffled_files[train_file_count:]
+
+        print(
+            f"File-level split: {len(train_files)} train files, {len(test_files)} test files"
+        )
+
+        # Add train files
+        for file_path in train_files:
+            all_args.append(
+                (
+                    file_path,
+                    patch_mapping,
+                    output_dir,
+                    next_patch_test,
+                    champion_encoder,
+                    task_means,
+                    task_stds,
+                    True,  # is_train_file
+                )
+            )
+
+        # Add test files
+        for file_path in test_files:
+            all_args.append(
+                (
+                    file_path,
+                    patch_mapping,
+                    output_dir,
+                    next_patch_test,
+                    champion_encoder,
+                    task_means,
+                    task_stds,
+                    False,  # is_train_file
+                )
+            )
+
+    # Process all files in parallel
+    num_cores = max(1, mp.cpu_count() - 1)
+    chunk_size = max(1, len(all_args) // (num_cores * 4))
+
+    train_count = 0
+    test_count = 0
+    cumulative_stats = {
+        "total_raw": 0,
+        "region_mismatch": 0,
+        "patch_filtered": 0,
+        "processed_in_patch": 0,
+        "filtered": 0,
+        "gold_filter": 0,
+        "deaths_filter": 0,
+        "cs_filter_normal": 0,
+        "level_filter": 0,
+        "errors": 0,
+    }
+
+    with mp.Pool(num_cores) as pool:
+        # Process in batches for memory management
+        batch_size = chunk_size * 5
+        for i in range(0, len(all_args), batch_size):
+            batch = all_args[i : i + batch_size]
+
+            results = list(
+                tqdm(
+                    pool.imap(process_file_complete, batch, chunksize=chunk_size),
+                    total=len(batch),
+                    desc=f"Processing batch {i//batch_size + 1}/{(len(all_args) + batch_size - 1)//batch_size}",
+                )
+            )
+
+            # Aggregate results
+            for (
+                success,
+                filter_counts,
+                file_path,
+                file_train_count,
+                file_test_count,
+            ) in results:
+                cumulative_stats["total_raw"] += filter_counts.get("total_raw", 0)
+                cumulative_stats["region_mismatch"] += filter_counts.get(
+                    "region_mismatch", 0
+                )
+
+                if success:
+                    train_count += file_train_count
+                    test_count += file_test_count
+                    cumulative_stats["processed_in_patch"] += filter_counts.get(
+                        "final_count", 0
+                    )
+
+                    # Add other filter stats
+                    for key in [
+                        "gold_filter",
+                        "deaths_filter",
+                        "cs_filter_normal",
+                        "level_filter",
+                    ]:
+                        cumulative_stats[key] += filter_counts.get(key, 0)
+
+                if "error" in filter_counts:
+                    cumulative_stats["errors"] += 1
+
+            # Garbage collection between batches
+            gc.collect()
+
+    # Save sample counts
+    with open(SAMPLE_COUNTS_PATH, "wb") as f:
+        pickle.dump({"train": train_count, "test": test_count}, f)
+
+    print(f"\nFinal sample counts: {train_count:,d} train, {test_count:,d} test")
+    print(
+        f"Successfully processed {len([f for f in os.listdir(os.path.join(output_dir, 'train'))])} train files"
+    )
+    print(
+        f"Successfully processed {len([f for f in os.listdir(os.path.join(output_dir, 'test'))])} test files"
+    )
+
+    # Print filtering stats
     if cumulative_stats["total_raw"] > 0:
         final_summary = [
             f"\nFinal filtering statistics:",
             f"├─ Total raw games: {cumulative_stats['total_raw']:,d}",
-            f"├─ Region mismatch filtered: {cumulative_stats['region_mismatch']:,d} ({cumulative_stats['region_mismatch']/cumulative_stats['total_raw']*100:.1f}%)",
-            f"├─ Games from old patches: {cumulative_stats['patch_filtered']:,d} ({cumulative_stats['patch_filtered']/cumulative_stats['total_raw']*100:.1f}%)",
+            f"├─ Region mismatch filtered: {cumulative_stats['region_mismatch']:,d}",
             f"├─ Games in recent patches: {cumulative_stats['processed_in_patch']:,d}",
-            f"├─ Filtering results (for games in recent patches only):",
-            f"│  ├─ Gold filter: {cumulative_stats['gold_filter']:,d} games ({cumulative_stats['gold_filter']/cumulative_stats['processed_in_patch']*100:.1f}%)",
-            f"│  ├─ Deaths filter: {cumulative_stats['deaths_filter']:,d} games ({cumulative_stats['deaths_filter']/cumulative_stats['processed_in_patch']*100:.1f}%)",
-            f"│  ├─ CS filter: {cumulative_stats['cs_filter_normal']:,d} games ({cumulative_stats['cs_filter_normal']/cumulative_stats['processed_in_patch']*100:.1f}%)",
-            f"│  ├─ Level filter: {cumulative_stats['level_filter']:,d} games ({cumulative_stats['level_filter']/cumulative_stats['processed_in_patch']*100:.1f}%)",
-            f"│  └─ Total filtered: {cumulative_stats['filtered']:,d} games ({cumulative_stats['filtered']/cumulative_stats['processed_in_patch']*100:.1f}%)",
-            f"└─ Final games kept: {cumulative_stats['processed_in_patch'] - cumulative_stats['filtered']:,d}",
+            f"├─ Gold filter: {cumulative_stats['gold_filter']:,d} games",
+            f"├─ Deaths filter: {cumulative_stats['deaths_filter']:,d} games",
+            f"├─ CS filter: {cumulative_stats['cs_filter_normal']:,d} games",
+            f"├─ Level filter: {cumulative_stats['level_filter']:,d} games",
+            f"├─ Errors encountered: {cumulative_stats['errors']:,d}",
+            f"└─ Final games kept: {train_count + test_count:,d}",
         ]
         tqdm.write("\n".join(final_summary))
 
-    return new_files
+
+def extract_champion_ids(file_path: str) -> set:
+    """Extract unique champion IDs from a single raw file"""
+    try:
+        # Read only the champion ID columns we need
+        df = pd.read_parquet(
+            file_path,
+            columns=[
+                f"team_{team}_{role}_championId"
+                for team in [100, 200]
+                for role in ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+            ],
+        )
+        # Extract all unique champion IDs
+        champion_ids = set()
+        for col in df.columns:
+            if col.endswith("_championId"):
+                champion_ids.update(df[col].dropna().astype(int).unique())
+        return champion_ids
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        return set()
+
+
+def process_file_for_stats(
+    file_path: str,
+) -> Tuple[Dict[str, float], Dict[str, float], int]:
+    """Process a single file to compute task statistics"""
+    try:
+        # Read the raw file
+        df = pd.read_parquet(file_path)
+
+        # Apply basic filtering (same as in main processing)
+        df["match_prefix"] = df["matchId"].str.split("_").str[0]
+        region_match_mask = df["match_prefix"] == df["region"]
+        df = df[region_match_mask]
+        df.drop("match_prefix", axis=1, inplace=True)
+
+        if len(df) == 0:
+            return {}, {}, 0
+
+        # Apply filters
+        df, _ = filter_outliers(df)
+
+        if len(df) <= 1:
+            return {}, {}, 0
+
+        # Apply all getters to create computed columns (needed for task stats)
+        for col, col_def in COLUMNS.items():
+            if col_def.getter is not None:
+                df[col] = col_def.getter(df)
+
+        for task, task_def in TASKS.items():
+            if task_def.getter is not None:
+                df[task] = task_def.getter(df)
+
+        # Compute statistics for regression tasks
+        task_sums = {}
+        task_sumsq = {}
+
+        for task, task_def in TASKS.items():
+            if task_def.task_type == TaskType.REGRESSION and task in df.columns:
+                task_sums[task] = df[task].sum()
+                task_sumsq[task] = (df[task] ** 2).sum()
+
+        return task_sums, task_sumsq, len(df)
+
+    except Exception as e:
+        print(f"Error processing {file_path} for stats: {e}")
+        return {}, {}, 0
+
+
+def create_champion_id_encoder_from_raw(data_files: List[str]) -> LabelEncoder:
+    """Create encoder for champion_ids from raw files using parallel processing"""
+    print(f"Creating encoder for champion_ids from raw files")
+
+    # Use multiprocessing to process files in parallel
+    num_cores = max(1, mp.cpu_count() - 1)
+    with mp.Pool(num_cores) as pool:
+        results = list(
+            tqdm(
+                pool.imap(extract_champion_ids, data_files),
+                total=len(data_files),
+                desc="Extracting champion_ids",
+            )
+        )
+
+    # Combine all unique values
+    unique_values = set()
+    for result in results:
+        unique_values.update(result)
+
+    unique_values = sorted(unique_values)
+    unique_values.append("UNKNOWN")
+
+    encoder = LabelEncoder()
+    encoder.fit(unique_values)
+    return encoder
+
+
+def compute_task_stats_from_raw(
+    data_files: List[str],
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Compute task statistics from raw files using parallel processing"""
+    print("Computing task statistics from raw files")
+
+    # Use multiprocessing with a subset of files for efficiency
+    sample_size = min(len(data_files), 1000)  # Use up to 1000 files for stats
+    sample_files = data_files[:sample_size]
+
+    num_cores = max(1, mp.cpu_count() - 1)
+    with mp.Pool(num_cores) as pool:
+        results = list(
+            tqdm(
+                pool.imap(process_file_for_stats, sample_files),
+                total=len(sample_files),
+                desc="Computing task statistics",
+            )
+        )
+
+    # Combine results
+    total_task_sums = {}
+    total_task_sumsq = {}
+    total_count = 0
+
+    for task_sums, task_sumsq, count in results:
+        for task in task_sums:
+            if task not in total_task_sums:
+                total_task_sums[task] = 0
+                total_task_sumsq[task] = 0
+            total_task_sums[task] += task_sums[task]
+            total_task_sumsq[task] += task_sumsq[task]
+        total_count += count
+
+    if total_count == 0:
+        raise ValueError("No valid data found for computing task statistics")
+
+    # Compute final statistics
+    task_means = {task: total_task_sums[task] / total_count for task in total_task_sums}
+    task_stds = {
+        task: np.sqrt((total_task_sumsq[task] / total_count) - (task_means[task] ** 2))
+        for task in total_task_sums
+    }
+
+    return task_means, task_stds
 
 
 def main():
@@ -650,18 +1179,31 @@ def main():
         input_files = input_files[:DEBUG_FILE_LIMIT]
         print(f"Processing {len(input_files)} files")
 
-    # Create temporary directory for intermediate files
-    temp_dir = os.path.join(args.output_dir, "temp")
+    # Step 1: Compute patch mapping (still needed for filtering)
+    print("Computing patch mapping...")
+    patch_mapping, patch_counts = compute_patch_mapping(
+        input_files, args.next_patch_test
+    )
 
-    print("Adding computed columns...")
-    enhanced_files = add_computed_columns(input_files, temp_dir, args.next_patch_test)
+    # Save the patch mapping and counts for future reference
+    with open(PATCH_MAPPING_PATH, "wb") as f:
+        pickle.dump(
+            {
+                "mapping": patch_mapping,
+                "counts": patch_counts,
+                "next_patch_test": args.next_patch_test,
+            },
+            f,
+        )
 
-    print("Creating encoders...")
-    champion_encoder = create_champion_id_encoder(enhanced_files)
+    # Step 2: Create encoders from raw files
+    print("Creating encoders from raw files...")
+    champion_encoder = create_champion_id_encoder_from_raw(input_files)
     print("Saving encoders...")
     with open(CHAMPION_ID_ENCODER_PATH, "wb") as f:
         pickle.dump({"mapping": champion_encoder}, f)
 
+    # Step 3: Compute task statistics from raw files (if not skipping)
     if args.skip_stats:
         print("Loading existing task statistics...")
         try:
@@ -675,15 +1217,16 @@ def main():
                 "Please run without --skip-stats first to generate the statistics."
             )
     else:
-        print("Computing statistics...")
-        task_means, task_stds = compute_task_stats(enhanced_files)
+        print("Computing statistics from raw files...")
+        task_means, task_stds = compute_task_stats_from_raw(input_files)
         print("Saving task statistics...")
         with open(TASK_STATS_PATH, "wb") as f:
             pickle.dump({"means": task_means, "stds": task_stds}, f)
 
-    print("Preparing final data...")
-    prepare_data(
-        enhanced_files,
+    # Step 4: Single-pass processing (no temporary directory!)
+    print("Processing files in single pass...")
+    prepare_data_single_pass(
+        input_files,
         args.output_dir,
         champion_encoder,
         task_means,
@@ -691,12 +1234,7 @@ def main():
         next_patch_test=args.next_patch_test,
     )
 
-    # Clean up temporary files
-    import shutil
-
-    shutil.rmtree(temp_dir)
-
-    print("Data preparation completed.")
+    print("Data preparation completed!")
 
 
 if __name__ == "__main__":
