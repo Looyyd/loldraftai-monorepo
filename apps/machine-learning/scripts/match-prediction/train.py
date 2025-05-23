@@ -227,7 +227,7 @@ def log_training_step(
         champ_patch_norm = torch.norm(model.champion_patch_embedding.weight.data).item()
 
         mlp_norm = torch.norm(
-            torch.cat([p.data.view(-1) for p in model.mlp.parameters()])
+            torch.cat([p.data.view(-1) for p in model.mlp_layers.parameters()])
         ).item()
         output_norm = torch.norm(
             torch.cat([p.data.view(-1) for p in model.output_layers.parameters()])
@@ -397,7 +397,6 @@ def validate(
                     losses = torch.stack([loss.mean() for loss in task_losses.values()])
                     total_loss += (losses * task_weights).sum()
 
-                    # TODO: fix calculation dev/filip/winchance-over-time broke it!
                     # Calculate win prediction accuracy
                     if "win_prediction" in enabled_tasks:
                         # Apply sigmoid to get probabilities
@@ -405,7 +404,7 @@ def validate(
                         # Predicted win if probability > 0.5
                         predictions = (win_probs > 0.5).float()
                         # Count correct predictions
-                        correct = (predictions == target_label).sum()
+                        correct = (predictions == labels["win_prediction"]).sum()
 
                         win_prediction_accuracy[0] += correct
                         win_prediction_accuracy[1] += batch_size
@@ -588,7 +587,6 @@ def train_model(
             batch_size=TRAIN_BATCH_SIZE,
             **dataloader_config,
             collate_fn=collate_fn,
-            persistent_workers=device.type == "cuda",
             drop_last=True,  # otherwise, because of large batch size, the last batch can have way less samples
         )
         for dataset in [train_dataset, test_dataset, test_masked_dataset]

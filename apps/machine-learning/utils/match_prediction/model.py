@@ -65,17 +65,34 @@ class Model(nn.Module):
 
         print(f"MLP input dimension: {mlp_input_dim}")
 
-        # MLP
-        layers = []
+        # MLP with residual connections
+        self.mlp_layers = nn.ModuleList()
         prev_dim = mlp_input_dim
-        for i, hidden_dim in enumerate(hidden_dims):
-            layers.append(nn.Linear(prev_dim, hidden_dim, bias=False))
-            layers.append(nn.BatchNorm1d(hidden_dim))
-            layers.append(nn.GELU())
-            dropout_rate = dropout if i < len(hidden_dims) - 1 else dropout * 0.5
-            layers.append(nn.Dropout(dropout_rate))
-            prev_dim = hidden_dim
-        self.mlp = nn.Sequential(*layers)
+
+        # First layer without residual
+        self.mlp_layers.append(
+            nn.Sequential(
+                nn.Linear(prev_dim, hidden_dims[0], bias=False),
+                nn.BatchNorm1d(hidden_dims[0]),
+                nn.GELU(),
+                nn.Dropout(dropout),
+            )
+        )
+
+        # Middle layers with residual connections
+        for i in range(1, len(hidden_dims)):
+            current_dim = hidden_dims[i - 1]
+            next_dim = hidden_dims[i]
+
+            # Projection layer if dimensions don't match
+            self.mlp_layers.append(
+                nn.Sequential(
+                    nn.Linear(current_dim, next_dim, bias=False),
+                    nn.BatchNorm1d(next_dim),
+                    nn.GELU(),
+                    nn.Dropout(dropout if i < len(hidden_dims) - 1 else dropout * 0.5),
+                )
+            )
 
         # Output layers
         self.output_layers = nn.ModuleDict()
@@ -88,8 +105,8 @@ class Model(nn.Module):
             # No need for specific handling for bucketed tasks here,
             # as they are already covered by BINARY_CLASSIFICATION
             elif task_name.startswith("win_prediction_"):
-                 # Already handled by the BINARY_CLASSIFICATION check above
-                 pass
+                # Already handled by the BINARY_CLASSIFICATION check above
+                pass
             else:
                 raise ValueError(f"Unknown task type: {task_def.task_type}")
 
@@ -135,10 +152,16 @@ class Model(nn.Module):
         embeddings_list.append(champ_patch_features)
 
         # Concatenate all features
-        combined_features = torch.cat(embeddings_list, dim=1)
+        x = torch.cat(embeddings_list, dim=1)
 
-        # Pass through MLP
-        x = self.mlp(combined_features)
+        # Pass through MLP with residual connections
+        x = self.mlp_layers[0](x)  # First layer without residual
+
+        for i in range(1, len(self.mlp_layers)):
+            residual = x
+            x = self.mlp_layers[i](x)
+            if x.shape == residual.shape:  # Only add residual if shapes match
+                x = x + residual
 
         # Generate outputs
         outputs = {}

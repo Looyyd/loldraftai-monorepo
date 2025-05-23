@@ -1,3 +1,6 @@
+# This script is used to adapt the model for online learning.
+# More specifically, it adapts the model for a new patch, by either sliding the embeddings(if we want the total number of patches to remain the same)
+# or by adding new patch embeddings(if we want to add a new patch).
 import torch
 import torch.nn as nn
 import argparse
@@ -77,6 +80,7 @@ def modify_state_dict_for_new_patch(
         new_num_patches, embed_dim, dtype=old_patch_weight.dtype
     )
     new_patch_weight[:old_num_patches] = old_patch_weight
+    # TODO: could experiment with using default initialization, but the idea is that using the last patch could avoid overfitting to the last patch, if it has less data
     # Initialize new patch embeddings with the last old patch embedding
     if old_num_patches > 0:
         last_patch_weight = old_patch_weight[old_num_patches - 1]
