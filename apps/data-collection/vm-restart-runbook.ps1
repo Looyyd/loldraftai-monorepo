@@ -1,3 +1,5 @@
+# Runbook used in azure to automatically restart a spot VM if it is deallocated.
+
 Param(
     [Parameter(Mandatory = $true)]
     [string]$SubscriptionId,
