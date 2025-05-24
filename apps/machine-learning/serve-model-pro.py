@@ -165,7 +165,7 @@ def denormalize_value(normalized_value: float, task_name: str) -> float:
 
 
 def calculate_gold_differences(model_output: dict) -> List[float]:
-    timestamp = "1500000"  # 15 minutes
+    timestamp = "900000"  # 15 minutes in milliseconds
     gold_diffs = []
 
     for position in POSITIONS:
