@@ -625,10 +625,9 @@ def train_model(
             anneal_strategy="cos",  # cosine annealing
         )
 
+    # TODO: could be inlined, it was useful before because tasks were removed after a few epochs
+    update_criterions(epoch=0)
     for epoch in range(config.num_epochs):
-        # Update criterions if needed
-        if epoch == 0 or epoch == config.annealing_epoch:
-            update_criterions(epoch)
         epoch_start_time = time.time()
 
         epoch_loss, epoch_steps = train_epoch(

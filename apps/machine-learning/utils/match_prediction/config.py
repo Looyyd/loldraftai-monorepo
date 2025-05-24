@@ -8,7 +8,6 @@ class TrainingConfig:
     def __init__(self, continue_training: bool = False):
         # Default values
         self.num_epochs = 50
-        self.annealing_epoch = 10  # number of epochs to use initial tasks, after that use final tasks(see task_definitions.py)
         # Deeper network with more layers
         self.hidden_dims = [
             1024,
@@ -51,7 +50,6 @@ class TrainingConfig:
             # Configuration for continued training (online learning)
             self.learning_rate = 4e-4  # Lower LR for continued training
             self.use_one_cycle_lr = False  # No one-cycle scheduler
-            self.annealing_epoch = 0  # immediatly use final tasks
         else:
             # Regular training configuration
             self.learning_rate = 8e-4

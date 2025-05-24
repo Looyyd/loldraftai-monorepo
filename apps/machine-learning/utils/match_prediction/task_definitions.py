@@ -45,6 +45,7 @@ TASKS = {
         weight=1,
     ),
     # Add win prediction tasks based on game duration buckets
+    # These are handled with special logic in the training loop, hence no getter
     "win_prediction_0_25": TaskDefinition(
         name="win_prediction_0_25",
         task_type=TaskType.BINARY_CLASSIFICATION,
@@ -66,17 +67,19 @@ TASKS = {
         weight=0.1,
     ),
     # TODO : added as a "hack" to make sure the column is added in the dataset, because needed for duration bucketing
+    # otherwise could be removed
     "gameDuration": TaskDefinition(
         name="gameDuration",
         getter=get_game_duration,
         task_type=TaskType.REGRESSION,
-        weight=0,
+        weight=0.01,
     ),
 }
 
 # Add total gold tasks for all positions and teams
 gold_tasks_count = len(POSITIONS) * len(TEAMS)  # 5 positions * 2 teams = 10 tasks
-gold_task_weight = 0 / gold_tasks_count
+# Lower weight, we want the win_prediction to be the main task
+gold_task_weight = 0.1 / gold_tasks_count
 
 for position in POSITIONS:
     for team_id in TEAMS:
@@ -94,28 +97,9 @@ def get_win_prediction(df: pd.DataFrame) -> pd.Series:
     return df["team_100_win"]
 
 
-def get_initial_tasks() -> Dict[str, TaskDefinition]:
-    # 0 weight for aux tasks, with enough data the model doesn't need them to learn, so we just add them as final tasks because they are used in the frontend
-    tasks = TASKS
-
-    for task_name, task_def in tasks.items():
-        if task_name == "win_prediction":
-            task_def.weight = 1
-        else:
-            task_def.weight = 0
-
-    return tasks
-
-
-def get_final_tasks() -> Dict[str, TaskDefinition]:
-    return TASKS
-
-
 def get_enabled_tasks(config: TrainingConfig, epoch: int) -> Dict[str, TaskDefinition]:
     """Returns dictionary of enabled tasks based on configuration and training phase"""
-    if epoch >= config.annealing_epoch:
-        # After annealing epoch, use final tasks with rebalanced weights
-        return get_final_tasks()
-    else:
-        # Before annealing epoch, use all tasks
-        return get_initial_tasks()
+    # The function exists because the training loop used to use many aux tasks(damage, tower kills, killds, deaths etc.)
+    # However these are not needed with enough data, therefore we now always train on only the tasks that are used in the frontend
+
+    return TASKS
