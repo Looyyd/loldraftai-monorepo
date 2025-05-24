@@ -35,7 +35,7 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
             <p className="text-sm leading-relaxed">
               Thank you for your support and interest in this project. The
               decision to pause updates was made after careful consideration of
-              the project's long-term sustainability.
+              the project&apos;s long-term sustainability.
             </p>
           </div>
         </div>
