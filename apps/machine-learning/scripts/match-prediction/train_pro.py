@@ -115,7 +115,7 @@ class FineTuningConfig:
     """Configuration class for fine-tuning"""
 
     def __init__(self):
-        self.num_epochs = 1000
+        self.num_epochs = 500
         self.learning_rate = 8e-6  # Lower learning rate for fine-tuning
         self.weight_decay = 0.05
         self.dropout = 0.5
@@ -246,6 +246,7 @@ class ProMatchDataset(Dataset):
         smooth_high: float = 0.9,
         masking_function: Optional[Callable[[], int]] = None,
         unknown_champion_id: Optional[int] = None,
+        preprocessed_data: Optional[Dict] = None,
     ):
         with open(CHAMPION_ID_ENCODER_PATH, "rb") as f:
             self.champion_id_encoder = pickle.load(f)["mapping"]
@@ -264,8 +265,26 @@ class ProMatchDataset(Dataset):
         self.masking_function = masking_function
         self.unknown_champion_id = unknown_champion_id
 
-        # Pre-compute all champion encodings for faster access
-        self._preprocess_data()
+        # Use preprocessed data if provided, otherwise compute it
+        if preprocessed_data is not None:
+            self.encoded_champions = preprocessed_data["encoded_champions"]
+            self.patch_indices = preprocessed_data["patch_indices"]
+            self.game_duration_minutes = preprocessed_data["game_duration_minutes"]
+            self.duration_masks = preprocessed_data["duration_masks"]
+            self.normalized_gold = preprocessed_data["normalized_gold"]
+        else:
+            # Pre-compute all champion encodings for faster access
+            self._preprocess_data()
+
+    def get_preprocessed_data(self) -> Dict:
+        """Return the preprocessed data for reuse in other dataset instances"""
+        return {
+            "encoded_champions": self.encoded_champions,
+            "patch_indices": self.patch_indices,
+            "game_duration_minutes": self.game_duration_minutes,
+            "duration_masks": self.duration_masks,
+            "normalized_gold": self.normalized_gold,
+        }
 
     def _preprocess_data(self):
         """Pre-compute expensive operations to speed up __getitem__"""
@@ -931,6 +950,22 @@ def create_dataloaders(
         ),
     )
 
+    # Store the validation DataFrame for later use
+    val_df = val_pro_loader.dataset.df  # Get the validation DataFrame from the dataset
+
+    # Create base dataset once for validation masking - reuse preprocessed data
+    _, unknown_champion_id = get_num_champions()
+    val_base_dataset = ProMatchDataset(
+        pro_games_df=val_df,
+        patch_mapping=patch_mapping,
+        use_label_smoothing=False,
+        unknown_champion_id=unknown_champion_id,
+    )
+    val_preprocessed_data = val_base_dataset.get_preprocessed_data()
+
+    # Check if we're using only pro data
+    using_only_pro_data = config.original_batch_size == 0
+
     # Check if we should use original data
     if config.original_batch_size > 0:
         # Create original dataset with the SAME masking strategy
@@ -974,7 +1009,7 @@ def create_dataloaders(
         train_loader = train_pro_loader
         val_original_loader = None
 
-    return train_loader, val_pro_loader, val_original_loader
+    return train_loader, val_pro_loader, val_preprocessed_data, using_only_pro_data
 
 
 def unfreeze_layer_group(model: Model, frozen_layers: int) -> int:
@@ -1115,18 +1150,14 @@ def fine_tune_model(
         fused=True if device.type == "cuda" else False,
     )
 
-    train_loader, val_pro_loader, val_original_loader = create_dataloaders(
-        pro_games_df,
-        patch_mapping,
-        finetune_config,
-        split_strategy=split_strategy,
+    train_loader, val_pro_loader, val_preprocessed_data, using_only_pro_data = (
+        create_dataloaders(
+            pro_games_df,
+            patch_mapping,
+            finetune_config,
+            split_strategy=split_strategy,
+        )
     )
-
-    # Store the validation DataFrame for later use
-    val_df = val_pro_loader.dataset.df  # Get the validation DataFrame from the dataset
-
-    # Check if we're using only pro data
-    using_only_pro_data = finetune_config.original_batch_size == 0
 
     for epoch in range(finetune_config.num_epochs):
         epoch_start = time.time()
@@ -1354,11 +1385,12 @@ def fine_tune_model(
             # Masked validation with different masking levels - now using validation data only
             masked_metrics = validate_with_masking_levels(
                 model=model,
-                val_df=val_df,  # Pass validation DataFrame instead of full dataset
+                val_df=val_pro_loader.dataset.df,  # Get validation DataFrame from dataset
                 patch_mapping=patch_mapping,
                 config=finetune_config,
                 device=device,
                 epoch=epoch,
+                val_preprocessed_data=val_preprocessed_data,
             )
 
             # Log all metrics
@@ -1538,6 +1570,7 @@ def validate_with_masking_levels(
     config: FineTuningConfig,
     device: torch.device,
     epoch: int,
+    val_preprocessed_data: Dict,
 ) -> Dict[str, float]:
     """
     Validate the model with different numbers of masked champions on validation data only
@@ -1552,13 +1585,14 @@ def validate_with_masking_levels(
     for num_masked in range(1, 11):  # 1 to 10 masked champions
         np.random.seed(42 + num_masked)
 
-        # Create dataset with specific number of masked champions
+        # Create dataset with specific number of masked champions, reusing preprocessed data
         val_masked_dataset = ProMatchDataset(
             pro_games_df=val_df,
             patch_mapping=patch_mapping,
             use_label_smoothing=False,
             masking_function=lambda: num_masked,  # Always mask exactly num_masked champions
             unknown_champion_id=unknown_champion_id,
+            preprocessed_data=val_preprocessed_data,  # Reuse preprocessed data!
         )
 
         val_masked_loader = DataLoader(
