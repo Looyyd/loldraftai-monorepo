@@ -1,6 +1,17 @@
 # LoLDraftAI monorepo
 
-Full source code for the website https://loldraftai.com/
+Full source code for the website https://loldraftai.com/, which hosts a deep learning model that predicts and analyzes League of Legends matches from draft only.
+The website maintenance has been paused for now.
+
+The runs for the currently online models are logged here for the solo queue model:
+https://wandb.ai/loyd-team/draftking/runs/jy5hf0bv?nw=nwuserloyd
+Model from epoch 46 is the best, with a validation loss of 0.681 and an accuracy of 56.1%.
+
+And here for the pro model:
+https://wandb.ai/loyd-team/draftking-pro-finetune/runs/jg3ls0xp/workspace?nw=nwuserloyd
+Model from epoch 240 is the best, with a validation loss of 0.6775 and an accuracy of 56.8%.
+
+Both models obtain good metrics, because predicting from draft only is a difficult task, this is because draft is only a small part of the game.
 
 ## Repository Structure
 
