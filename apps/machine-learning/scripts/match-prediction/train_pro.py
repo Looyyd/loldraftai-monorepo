@@ -51,6 +51,12 @@ from utils.match_prediction.task_definitions import (
 )
 from utils.match_prediction.masking_strategies import MASKING_STRATEGIES
 
+
+# Enable cuDNN auto-tuner
+torch.backends.cudnn.benchmark = True
+# Use TensorFloat-32 for faster computation
+torch.set_float32_matmul_precision("high")
+
 # Attempting to finetune on multiple tasks, could perhaps make the model "understand" the domain adaptations better
 # Futhermore our ui integrates these tasks, so should probably train the model on them.
 # (for example, pro games have less drastic gold leads and less kills)
@@ -258,6 +264,57 @@ class ProMatchDataset(Dataset):
         self.masking_function = masking_function
         self.unknown_champion_id = unknown_champion_id
 
+        # Pre-compute all champion encodings for faster access
+        self._preprocess_data()
+
+    def _preprocess_data(self):
+        """Pre-compute expensive operations to speed up __getitem__"""
+        print("Pre-processing ProMatchDataset...")
+
+        # Pre-encode all champion IDs
+        all_champion_ids = np.vstack(self.df["champion_ids"].values)
+        self.encoded_champions = self.champion_id_encoder.transform(
+            all_champion_ids.flatten()
+        ).reshape(-1, 10)
+
+        # Pre-compute patch indices
+        self.patch_indices = self.df.apply(
+            lambda row: self.patch_mapping[get_patch_from_raw_data(row)], axis=1
+        ).values
+
+        # Pre-compute game duration in minutes
+        self.game_duration_minutes = (self.df["gameDuration"] / 60).values
+
+        # Pre-compute duration bucket masks
+        self.duration_masks = {
+            "0_25": self.game_duration_minutes < 25,
+            "25_30": (self.game_duration_minutes >= 25)
+            & (self.game_duration_minutes < 30),
+            "30_35": (self.game_duration_minutes >= 30)
+            & (self.game_duration_minutes < 35),
+            "35_inf": self.game_duration_minutes >= 35,
+        }
+
+        # Pre-normalize gold values for all positions and teams
+        self.normalized_gold = {}
+        for position in POSITIONS:
+            for team_id in TEAMS:
+                col = f"team_{team_id}_{position}_totalGold_at_900000"
+                task_name = col
+                gold_values = self.df[col].values
+
+                # Normalize using task statistics
+                if self.task_stds[task_name] != 0:
+                    normalized = (
+                        gold_values - self.task_means[task_name]
+                    ) / self.task_stds[task_name]
+                else:
+                    normalized = gold_values - self.task_means[task_name]
+
+                self.normalized_gold[task_name] = normalized
+
+        print("Pre-processing complete!")
+
     def __len__(self):
         return len(self.df)
 
@@ -282,82 +339,52 @@ class ProMatchDataset(Dataset):
         row = self.df.iloc[idx]
         features = {}
 
-        # Process champion IDs with masking if enabled
-        try:
-            champion_ids = self._get_champion_ids(row)
-            # First encode the original champion IDs
-            encoded_champs = self.champion_id_encoder.transform(champion_ids)
+        # Use pre-encoded champion IDs
+        encoded_champs = self.encoded_champions[idx].tolist()
 
-            # Then apply masking to the encoded values if needed(the unkown champion id is already encoded)
-            if (
-                self.masking_function is not None
-                and self.unknown_champion_id is not None
-            ):
-                encoded_champs = self._mask_champions(
-                    encoded_champs.tolist(), self.masking_function()
-                )
+        # Apply masking if needed
+        if self.masking_function is not None and self.unknown_champion_id is not None:
+            encoded_champs = self._mask_champions(
+                encoded_champs, self.masking_function()
+            )
 
-            features["champion_ids"] = torch.tensor(encoded_champs, dtype=torch.long)
-        except Exception as e:
-            print(f"ERROR processing champion IDs for row {idx}: {e}")
-            print(f"Row data: {row}")
-            raise
+        features["champion_ids"] = torch.tensor(encoded_champs, dtype=torch.long)
 
-        # Process patch
-        features["patch"] = torch.tensor(
-            self.patch_mapping[get_patch_from_raw_data(row)], dtype=torch.long
-        )
+        # Use pre-computed patch index
+        features["patch"] = torch.tensor(self.patch_indices[idx], dtype=torch.long)
 
-        # We fine tune from the trained ranked_queue_index
+        # Fixed queue type and elo
         features["queue_type"] = torch.tensor(PRO_QUEUE_INDEX, dtype=torch.long)
         features["elo"] = torch.tensor(
             0.0, dtype=torch.long
         )  # 0 is highest skill level
 
-        # Calculate and normalize task values
+        # Calculate labels
         labels = {}
 
-        # Win prediction
-        win_prediction = row["team_100_win"]
+        # Win prediction with label smoothing
+        win_prediction = float(row["team_100_win"])
         if self.use_label_smoothing:
             win_prediction = (
                 self.smooth_low if win_prediction == 0 else self.smooth_high
             )
         labels["win_prediction"] = torch.tensor(win_prediction, dtype=torch.float32)
 
-        # Game duration bucketed win predictions
-        # gamdeDuration is not normalized in pro dataset
-        game_duration_minutes = row["gameDuration"] / 60
-        duration_buckets = {
-            "0_25": game_duration_minutes < 25,
-            "25_30": 25 <= game_duration_minutes < 30,
-            "30_35": 30 <= game_duration_minutes < 35,
-            "35_inf": game_duration_minutes >= 35,
-        }
-
-        for bucket, condition in duration_buckets.items():
+        # Use pre-computed duration buckets
+        for bucket, mask_array in self.duration_masks.items():
             task_name = f"win_prediction_{bucket}"
-            if condition:
+            if mask_array[idx]:
                 labels[task_name] = torch.tensor(win_prediction, dtype=torch.float32)
             else:
                 labels[task_name] = torch.tensor(float("nan"), dtype=torch.float32)
 
-        # Gold values at 15 minutes (normalize using task stats)
+        # Use pre-normalized gold values
         for position in POSITIONS:
             for team_id in TEAMS:
-                col = f"team_{team_id}_{position}_totalGold_at_900000"
-                task_name = col
-                gold_value = row[col]
-
-                # Normalize using task statistics
-                if self.task_stds[task_name] != 0:
-                    normalized_gold = (
-                        gold_value - self.task_means[task_name]
-                    ) / self.task_stds[task_name]
-                else:
-                    normalized_gold = gold_value - self.task_means[task_name]
-
-                labels[task_name] = torch.tensor(normalized_gold, dtype=torch.float32)
+                task_name = f"team_{team_id}_{position}_totalGold_at_900000"
+                labels[task_name] = torch.tensor(
+                    self.normalized_gold[task_name][idx], dtype=torch.float32
+                )
 
         return features, labels
 
@@ -452,7 +479,7 @@ def pro_collate_fn(
     batch: List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]],
 ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
     """
-    Custom collate function for the ProMatchDataset
+    Custom collate function for the ProMatchDataset - optimized version
 
     Args:
         batch: List of tuples, where each tuple contains:
@@ -462,32 +489,28 @@ def pro_collate_fn(
     Returns:
         Tuple of (features_batch, labels_batch), where each is a dict mapping names to batched tensors
     """
-    features_batch = {}
-    labels_batch = {}
+    batch_size = len(batch)
+    if batch_size == 0:
+        return {}, {}
 
-    # Process each item in the batch
-    for features, labels in batch:
-        # Collect features
-        for k, v in features.items():
-            if k not in features_batch:
-                features_batch[k] = []
-            features_batch[k].append(v)
+    # Get keys from first sample
+    features_keys = list(batch[0][0].keys())
+    labels_keys = list(batch[0][1].keys())
 
-        # Collect labels
-        for k, v in labels.items():
-            if k not in labels_batch:
-                labels_batch[k] = []
-            labels_batch[k].append(v)
+    # Pre-allocate lists for better performance
+    features_batch = {k: [None] * batch_size for k in features_keys}
+    labels_batch = {k: [None] * batch_size for k in labels_keys}
 
-    # Convert lists to tensors
-    features_batch = {
-        k: torch.stack(v) if v[0].dim() > 0 else torch.tensor(v)
-        for k, v in features_batch.items()
-    }
-    labels_batch = {
-        k: torch.stack(v) if v[0].dim() > 0 else torch.tensor(v)
-        for k, v in labels_batch.items()
-    }
+    # Collect all tensors in a single pass
+    for i, (features, labels) in enumerate(batch):
+        for k in features_keys:
+            features_batch[k][i] = features[k]
+        for k in labels_keys:
+            labels_batch[k][i] = labels[k]
+
+    # Stack tensors efficiently
+    features_batch = {k: torch.stack(v) for k, v in features_batch.items()}
+    labels_batch = {k: torch.stack(v) for k, v in labels_batch.items()}
 
     return features_batch, labels_batch
 
@@ -533,67 +556,67 @@ class MixedDataLoader:
                 self.original_iter = iter(self.original_loader)
                 original_features, original_labels = next(self.original_iter)
 
-            # Combine batches
-            combined_features = {}
+            # Combine batches more efficiently
+            combined_features = {
+                key: torch.cat([finetune_features[key], original_features[key]], dim=0)
+                for key in finetune_features
+            }
+
+            # Pre-calculate masks for duration buckets
             combined_labels = {}
 
-            for key in finetune_features:
-                combined_features[key] = torch.cat(
-                    [finetune_features[key], original_features[key]]
-                )
-
-            # Only include fine-tune tasks in labels
+            # Handle non-bucketed tasks first
             for key in FINE_TUNE_TASKS:
-                if not key.startswith("win_prediction_"):
-                    # For non-win prediction tasks, just concatenate as before
+                if key == "win_prediction":
                     combined_labels[key] = torch.cat(
-                        [finetune_labels[key], original_labels[key]]
+                        [finetune_labels[key], original_labels["win_prediction"]], dim=0
                     )
-                else:
-                    # For win_prediction bucketed tasks
-                    if key == "win_prediction":
-                        # The main win_prediction task is handled normally
-                        combined_labels[key] = torch.cat(
-                            [finetune_labels[key], original_labels["win_prediction"]]
-                        )
-                    else:
-                        # Get bucket range from task name
+                elif not key.startswith("win_prediction_"):
+                    # For non-win prediction tasks, just concatenate
+                    combined_labels[key] = torch.cat(
+                        [finetune_labels[key], original_labels[key]], dim=0
+                    )
+
+            # Handle bucketed win prediction tasks more efficiently
+            if any(
+                k.startswith("win_prediction_") and k != "win_prediction"
+                for k in FINE_TUNE_TASKS
+            ):
+                # Denormalize game duration once for all buckets
+                orig_duration_minutes = (
+                    original_labels["gameDuration"] * self.game_duration_std
+                    + self.game_duration_mean
+                ) / 60
+
+                # Pre-compute all masks
+                duration_masks = {
+                    "0_25": orig_duration_minutes < 25,
+                    "25_30": (orig_duration_minutes >= 25)
+                    & (orig_duration_minutes < 30),
+                    "30_35": (orig_duration_minutes >= 30)
+                    & (orig_duration_minutes < 35),
+                    "35_inf": orig_duration_minutes >= 35,
+                }
+
+                # Apply masks to create bucketed labels
+                for key in FINE_TUNE_TASKS:
+                    if key.startswith("win_prediction_") and key != "win_prediction":
                         bucket = key.split("win_prediction_")[1]
 
-                        # Denormalize game duration for original data using stored stats
-                        orig_duration_minutes = (
-                            original_labels["gameDuration"] * self.game_duration_std
-                            + self.game_duration_mean
-                        ) / 60
-
-                        # TODO: could add time buckets here for both? instead of also having the logic in the pro dataset?
-                        # Create duration mask based on bucket
-                        if bucket == "0_25":
-                            duration_mask = orig_duration_minutes < 25
-                        elif bucket == "25_30":
-                            duration_mask = (orig_duration_minutes >= 25) & (
-                                orig_duration_minutes < 30
-                            )
-                        elif bucket == "30_35":
-                            duration_mask = (orig_duration_minutes >= 30) & (
-                                orig_duration_minutes < 35
-                            )
-                        elif bucket == "35_inf":
-                            duration_mask = orig_duration_minutes >= 35
-
-                        # Create masked labels: use win_prediction where duration matches, NaN otherwise
+                        # Create masked labels efficiently
                         orig_masked_labels = torch.full_like(
                             original_labels["win_prediction"],
                             float("nan"),
                             dtype=torch.float32,
                         )
-                        orig_masked_labels[duration_mask] = original_labels[
-                            "win_prediction"
-                        ][duration_mask]
+                        mask = duration_masks[bucket]
+                        orig_masked_labels[mask] = original_labels["win_prediction"][
+                            mask
+                        ]
 
-                        # Combine finetune and masked original labels
+                        # Combine with finetune labels
                         combined_labels[key] = torch.cat(
-                            [finetune_labels[key], orig_masked_labels]
+                            [finetune_labels[key], orig_masked_labels], dim=0
                         )
 
             return combined_features, combined_labels
@@ -875,6 +898,18 @@ def create_dataloaders(
         shuffle=True,
         drop_last=True,
         collate_fn=pro_collate_fn,
+        num_workers=dataloader_config.get("num_workers", 0),
+        pin_memory=dataloader_config.get("pin_memory", False),
+        prefetch_factor=(
+            dataloader_config.get("prefetch_factor", 2)
+            if dataloader_config.get("num_workers", 0) > 0
+            else None
+        ),
+        persistent_workers=(
+            dataloader_config.get("persistent_workers", False)
+            if dataloader_config.get("num_workers", 0) > 0
+            else False
+        ),
     )
 
     val_pro_loader = DataLoader(
@@ -882,6 +917,18 @@ def create_dataloaders(
         batch_size=config.batch_size,
         shuffle=False,
         collate_fn=pro_collate_fn,
+        num_workers=dataloader_config.get("num_workers", 0),
+        pin_memory=dataloader_config.get("pin_memory", False),
+        prefetch_factor=(
+            dataloader_config.get("prefetch_factor", 2)
+            if dataloader_config.get("num_workers", 0) > 0
+            else None
+        ),
+        persistent_workers=(
+            dataloader_config.get("persistent_workers", False)
+            if dataloader_config.get("num_workers", 0) > 0
+            else False
+        ),
     )
 
     # Check if we should use original data
@@ -994,6 +1041,13 @@ def fine_tune_model(
 
     model = load_model_state_dict(model, device, path=pretrained_model_path)
 
+    # After loading model state dict
+    model.to(device)
+    if device == torch.device("cuda"):
+        print("Compiling model")
+        model = torch.compile(model, backend="eager")
+        print("Model compiled")
+
     # Track best model and metrics
     best_metric = float("inf")
     best_model_state = None
@@ -1058,6 +1112,7 @@ def fine_tune_model(
     optimizer = optim.AdamW(
         get_optimizer_grouped_parameters(model, finetune_config.weight_decay),
         lr=finetune_config.learning_rate,
+        fused=True if device.type == "cuda" else False,
     )
 
     train_loader, val_pro_loader, val_original_loader = create_dataloaders(
@@ -1091,6 +1146,7 @@ def fine_tune_model(
             optimizer = optim.AdamW(
                 get_optimizer_grouped_parameters(model, finetune_config.weight_decay),
                 lr=finetune_config.learning_rate,
+                fused=True if device.type == "cuda" else False,
             )
 
             next_unfreeze_idx += 1
@@ -1111,127 +1167,133 @@ def fine_tune_model(
             train_loader, desc=f"Epoch {epoch+1}/{finetune_config.num_epochs}"
         )
         for batch_idx, (features, labels) in enumerate(progress_bar):
-            features = {k: v.to(device) for k, v in features.items()}
-            labels = {k: v.to(device) for k, v in labels.items()}
+            features = {k: v.to(device, non_blocking=True) for k, v in features.items()}
+            labels = {k: v.to(device, non_blocking=True) for k, v in labels.items()}
 
-            optimizer.zero_grad()
-            outputs = model(features)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                outputs = model(features)
 
-            # Calculate losses for each task
-            batch_losses = []
-            pro_losses = {task: 0.0 for task in task_names}
-            original_losses = {task: 0.0 for task in task_names}
+                # Calculate losses for each task
+                batch_losses = []
+                pro_losses = {task: 0.0 for task in task_names}
+                original_losses = {task: 0.0 for task in task_names}
 
-            for task_name, task_def in enabled_tasks.items():
-                task_criterion = criterion[task_def.task_type]
+                for task_name, task_def in enabled_tasks.items():
+                    task_criterion = criterion[task_def.task_type]
 
-                # Create mask for non-NaN values in both predictions and labels
-                valid_mask = ~torch.isnan(labels[task_name])
-                if valid_mask.any():
-                    # Only compute loss on non-NaN values
-                    valid_outputs = outputs[task_name][valid_mask]
-                    valid_labels = labels[task_name][valid_mask]
+                    # Create mask for non-NaN values in both predictions and labels
+                    valid_mask = ~torch.isnan(labels[task_name])
+                    if valid_mask.any():
+                        # Only compute loss on non-NaN values
+                        valid_outputs = outputs[task_name][valid_mask]
+                        valid_labels = labels[task_name][valid_mask]
 
-                    # Additional check for NaN in outputs
-                    output_valid_mask = ~torch.isnan(valid_outputs)
-                    if output_valid_mask.any():
-                        task_loss = task_criterion(
-                            valid_outputs[output_valid_mask],
-                            valid_labels[output_valid_mask],
-                        )
-
-                        if using_only_pro_data:
-                            # If using only pro data, all samples are pro samples
-                            pro_loss = task_loss.mean()
-                            weighted_loss = pro_loss * finetune_config.pro_loss_weight
-                            pro_losses[task_name] = pro_loss.item()
-                            pro_train_losses[task_name] += pro_loss.item()
-                            pro_train_counts[task_name] += 1
-                            batch_losses.append(weighted_loss)
-                        else:
-                            # Create pro/original mask before applying output_valid_mask
-                            pro_orig_mask = (
-                                torch.arange(len(valid_mask), device=device)
-                                < finetune_config.batch_size
+                        # Additional check for NaN in outputs
+                        output_valid_mask = ~torch.isnan(valid_outputs)
+                        if output_valid_mask.any():
+                            task_loss = task_criterion(
+                                valid_outputs[output_valid_mask],
+                                valid_labels[output_valid_mask],
                             )
-                            # Keep track of which valid samples are from pro/original data
-                            valid_pro_mask = pro_orig_mask[valid_mask]
 
-                            # Update pro mask to account for output_valid_mask
-                            final_pro_mask = valid_pro_mask[output_valid_mask]
-
-                            # Apply separate weights to pro and original losses
-                            weighted_loss_sum = 0.0
-
-                            # Apply pro weight to pro samples
-                            if final_pro_mask.any():
-                                pro_loss = task_loss[final_pro_mask].mean()
-                                weighted_pro_loss = (
+                            if using_only_pro_data:
+                                # If using only pro data, all samples are pro samples
+                                pro_loss = task_loss.mean()
+                                weighted_loss = (
                                     pro_loss * finetune_config.pro_loss_weight
                                 )
                                 pro_losses[task_name] = pro_loss.item()
                                 pro_train_losses[task_name] += pro_loss.item()
                                 pro_train_counts[task_name] += 1
-                                # Add weighted pro loss
-                                weighted_loss_sum += weighted_pro_loss
-
-                            # Apply original weight to original samples
-                            if (~final_pro_mask).any():
-                                original_loss = task_loss[~final_pro_mask].mean()
-                                weighted_original_loss = (
-                                    original_loss * finetune_config.original_loss_weight
+                                batch_losses.append(weighted_loss)
+                            else:
+                                # Create pro/original mask before applying output_valid_mask
+                                pro_orig_mask = (
+                                    torch.arange(len(valid_mask), device=device)
+                                    < finetune_config.batch_size
                                 )
-                                original_losses[task_name] = original_loss.item()
-                                original_train_losses[task_name] += original_loss.item()
-                                original_train_counts[task_name] += 1
-                                # Add weighted original loss
-                                weighted_loss_sum += weighted_original_loss
+                                # Keep track of which valid samples are from pro/original data
+                                valid_pro_mask = pro_orig_mask[valid_mask]
 
-                            # Use weighted loss - now a scalar value
-                            batch_losses.append(weighted_loss_sum)
+                                # Update pro mask to account for output_valid_mask
+                                final_pro_mask = valid_pro_mask[output_valid_mask]
+
+                                # Apply separate weights to pro and original losses
+                                weighted_loss_sum = 0.0
+
+                                # Apply pro weight to pro samples
+                                if final_pro_mask.any():
+                                    pro_loss = task_loss[final_pro_mask].mean()
+                                    weighted_pro_loss = (
+                                        pro_loss * finetune_config.pro_loss_weight
+                                    )
+                                    pro_losses[task_name] = pro_loss.item()
+                                    pro_train_losses[task_name] += pro_loss.item()
+                                    pro_train_counts[task_name] += 1
+                                    # Add weighted pro loss
+                                    weighted_loss_sum += weighted_pro_loss
+
+                                # Apply original weight to original samples
+                                if (~final_pro_mask).any():
+                                    original_loss = task_loss[~final_pro_mask].mean()
+                                    weighted_original_loss = (
+                                        original_loss
+                                        * finetune_config.original_loss_weight
+                                    )
+                                    original_losses[task_name] = original_loss.item()
+                                    original_train_losses[
+                                        task_name
+                                    ] += original_loss.item()
+                                    original_train_counts[task_name] += 1
+                                    # Add weighted original loss
+                                    weighted_loss_sum += weighted_original_loss
+
+                                # Use weighted loss - now a scalar value
+                                batch_losses.append(weighted_loss_sum)
+                        else:
+                            print(f"No valid values for task {task_name}")
+                            batch_losses.append(torch.tensor(0.0, device=device))
                     else:
                         print(f"No valid values for task {task_name}")
                         batch_losses.append(torch.tensor(0.0, device=device))
-                else:
-                    print(f"No valid values for task {task_name}")
-                    batch_losses.append(torch.tensor(0.0, device=device))
 
-            # Combine losses with task weights
-            batch_losses = torch.stack(batch_losses)
+                # Combine losses with task weights
+                batch_losses = torch.stack(batch_losses)
 
-            # Debug information for weighted loss
-            if torch.isnan(batch_losses).any():
-                print("\nNaN detected in batch losses!")
-                for task_name, loss in zip(task_names, batch_losses):
-                    print(f"{task_name}: {loss.item()}")
-                print(f"Task weights: {task_weights}")
+                # Debug information for weighted loss
+                if torch.isnan(batch_losses).any():
+                    print("\nNaN detected in batch losses!")
+                    for task_name, loss in zip(task_names, batch_losses):
+                        print(f"{task_name}: {loss.item()}")
+                    print(f"Task weights: {task_weights}")
 
-            total_loss = (batch_losses * task_weights).sum()
+                total_loss = (batch_losses * task_weights).sum()
 
-            # Log per-batch losses to wandb
-            if finetune_config.log_wandb:
-                log_dict = {
-                    f"train_batch_pro_loss_{task}": loss
-                    for task, loss in pro_losses.items()
-                    if loss is not None
-                }
-                if not using_only_pro_data:
-                    log_dict.update(
-                        {
-                            f"train_batch_original_loss_{task}": loss
-                            for task, loss in original_losses.items()
-                            if loss is not None
-                        }
-                    )
-                wandb.log(log_dict)
+                # Log per-batch losses to wandb
+                if finetune_config.log_wandb:
+                    log_dict = {
+                        f"train_batch_pro_loss_{task}": loss
+                        for task, loss in pro_losses.items()
+                        if loss is not None
+                    }
+                    if not using_only_pro_data:
+                        log_dict.update(
+                            {
+                                f"train_batch_original_loss_{task}": loss
+                                for task, loss in original_losses.items()
+                                if loss is not None
+                            }
+                        )
+                    wandb.log(log_dict)
 
-            # Backward pass
-            total_loss.backward()
+                # Backward pass
+                total_loss.backward()
 
-            clip_grad_norm_(model.parameters(), finetune_config.max_grad_norm)
+                clip_grad_norm_(model.parameters(), finetune_config.max_grad_norm)
 
-            optimizer.step()
-            train_steps += 1
+                optimizer.step()
+                train_steps += 1
 
         # Calculate average losses and metrics
         avg_train_losses = {
@@ -1242,16 +1304,16 @@ def fine_tune_model(
         avg_pro_train_losses = {
             task: loss / count if count > 0 else float("nan")
             for task, (loss, count) in zip(
-                pro_losses.keys(),
-                zip(pro_losses.values(), pro_train_counts.values()),
+                pro_train_losses.keys(),  # ✅ Now correctly using pro_train_losses
+                zip(pro_train_losses.values(), pro_train_counts.values()),
             )
         }
 
         avg_original_train_losses = {
             task: loss / count if count > 0 else float("nan")
             for task, (loss, count) in zip(
-                original_losses.keys(),
-                zip(original_losses.values(), original_train_counts.values()),
+                original_train_losses.keys(),  # ✅ Now correctly using original_train_losses
+                zip(original_train_losses.values(), original_train_counts.values()),
             )
         }
 
@@ -1404,11 +1466,12 @@ def validate_loader(
     )
 
     for features, labels in loader:
-        features = {k: v.to(device) for k, v in features.items()}
-        labels = {k: v.to(device) for k, v in labels.items()}
+        features = {k: v.to(device, non_blocking=True) for k, v in features.items()}
+        labels = {k: v.to(device, non_blocking=True) for k, v in labels.items()}
         batch_size = next(iter(labels.values())).size(0)
 
-        outputs = model(features)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            outputs = model(features)
 
         # Calculate task losses
         for task_idx, (task_name, task_def) in enumerate(FINE_TUNE_TASKS.items()):

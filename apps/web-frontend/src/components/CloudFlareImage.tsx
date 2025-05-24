@@ -1,3 +1,5 @@
+// This component is used to load images from the CloudFlare CDN.
+// Used to avoid high egress costs of Vercel.
 const CloudFlareImage = (
   props: Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> & {
     src: string;

@@ -41,7 +41,7 @@ The model uses a neural network architecture with several key components:
 
 The system includes a specialized fine-tuning pipeline (`train_pro.py`) for professional matches.
 
-The finetune script uses the pre-trained model as base. A new queue_type embedding is trained for pro play. The model is finetune while keeping a significant portion of data from solo queue matches, to avoid catastrophic forgetting.
+The finetune script uses the pre-trained model as base. A new queue_type embedding is trained for pro play, while other embeddings are frozen, the mlp layers are unfrozen. The model is finetune while keeping a significant portion of data from solo queue matches, to avoid catastrophic forgetting(which was observed if not using original data).
 
 ### Model serving
 
