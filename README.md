@@ -26,3 +26,19 @@ Full source code for the website https://loldraftai.com/
 
 - **ui**  
   UI package, used by both the desktop and web-frontend app.
+
+## Infrastructure
+
+The infrastructure used for this project is:
+
+- An Azure VM(Standard D2s v3) for running the data-collection scripts.
+
+- A Postgresql database(Standard_B4ms (4 vCores)) for storing the league api data(Summoners and Matches). Complete matches are then exported to an Azure bucket in parquet format.
+
+- Cloudflare for large media hosting(download file for desktop and images for web-frontend).
+
+- Vercel for web-frontend.
+
+- Azure container apps for the model inference(0.5vCPU and 1Gb Ram was enough).
+
+- My gaming PC for model training :-)

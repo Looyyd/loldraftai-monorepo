@@ -39,7 +39,7 @@ The model uses a neural network architecture with several key components:
 
 ### Fine-tuning for Pro Play
 
-The system includes a specialized fine-tuning pipeline (`train_pro.py`) for professional matches.
+The system includes a specialized fine-tuning pipeline (`train_pro.py`) for professional matches, this model is available at https://loldraftai.com/pro-draft.
 
 The finetune script uses the pre-trained model as base. A new queue_type embedding is trained for pro play, while other embeddings are frozen, the mlp layers are unfrozen. The model is finetune while keeping a significant portion of data from solo queue matches, to avoid catastrophic forgetting(which was observed if not using original data).
 
