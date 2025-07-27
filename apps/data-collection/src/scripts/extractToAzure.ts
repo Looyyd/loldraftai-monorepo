@@ -145,14 +145,7 @@ class MatchExtractor {
       const month = (now.getMonth() + 1).toString().padStart(2, "0");
       const batchId = now.toISOString().replace(/[:.]/g, "-");
 
-      const remoteRawFileName = `${RAW_DATA_PREFIX}/${year}/${month}/${batchId}.json`;
       const processedFileName = `${PROCESSED_DATA_PREFIX}/${year}/${month}/${batchId}.parquet`;
-
-      log("DEBUG", `Saving raw data to: ${remoteRawFileName}`);
-      await this.remoteFileSaver.saveFile(
-        remoteRawFileName,
-        JSON.stringify(matches)
-      );
 
       const rawLocalFilePath = path.join(
         this.config.tempDir,
