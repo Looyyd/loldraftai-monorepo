@@ -12,7 +12,7 @@ module.exports = {
       error_file: "./logs/extractToAzure_error.log",
       out_file: "./logs/extractToAzure_out.log",
     },
-    ...["EUW1", "KR", "NA1", "OC1"].flatMap((region, regionIndex) =>
+    ...["EUW1", "KR"].flatMap((region, regionIndex) =>
       ["collectMatchIds", "fetchPuuids", "processMatches", "updateLadder"].map(
         (script) => ({
           name: `${script}-${region}`,

@@ -31,6 +31,14 @@ if (!apiKey) {
   throw new Error("X_RIOT_API_KEY is not set");
 }
 
+// Define minimum match ID thresholds for each region
+const MINIMUM_MATCH_IDS: Record<string, number> = {
+  EUW1: 7410137701,
+  KR: 7653151195,
+  NA1: 5293107648,
+  OC1: 883909940,
+};
+
 const riotApiClient = new RiotAPIClient(apiKey, region);
 const prisma = new PrismaClient();
 
@@ -54,10 +62,42 @@ const log: LoggerFunction = (level, message) => {
 
 const PATCH_14_START = new Date("2024-01-01").getTime() / 1000; // Convert to seconds for Riot API
 const MAX_MATCHES_HIGH_ELO = 100;
-const MAX_MATCHES_LOW_ELO = 10;
+const MAX_MATCHES_LOW_ELO = 20;
+
+// Helper function to extract numeric ID from match ID
+function extractNumericId(matchId: string): number {
+  const parts = matchId.split("_");
+  if (parts.length !== 2) {
+    console.warn(`Unexpected match ID format: ${matchId}`);
+    return 0;
+  }
+  return parseInt(parts[1] as string, 10);
+}
+
+// Helper function to check if match ID is above threshold
+function isMatchIdAboveThreshold(matchId: string, region: string): boolean {
+  const minThreshold = MINIMUM_MATCH_IDS[region];
+  if (!minThreshold) {
+    console.warn(
+      `No threshold defined for region ${region}, accepting all matches`
+    );
+    return true;
+  }
+
+  const numericId = extractNumericId(matchId);
+  return numericId >= minThreshold;
+}
 
 async function collectMatchIds() {
   try {
+    // Log the threshold being used for this region
+    const threshold = MINIMUM_MATCH_IDS[region];
+    if (threshold) {
+      console.log(`[${region}] Using minimum match ID threshold: ${threshold}`);
+    } else {
+      console.log(`[${region}] No threshold defined, accepting all matches`);
+    }
+
     while (true) {
       // Fetch summoners with retry
       const summoners = await dbBackoff.withRetry(async () => {
@@ -110,18 +150,38 @@ async function collectMatchIds() {
               })
             );
 
+            // Filter match IDs based on threshold
+            const filteredMatchIds = matchIds.filter((matchId) =>
+              isMatchIdAboveThreshold(matchId, region)
+            );
+
+            allMatchIds.push(...filteredMatchIds);
+
             // If we got less than requested matches, we've reached the end
             if (matchIds.length < batchSize) {
-              allMatchIds.push(...matchIds);
               break;
             }
-
-            allMatchIds.push(...matchIds);
 
             // Only continue pagination for high elo
             if (isHighElo) {
               start += batchSize;
             }
+          }
+
+          // Skip if no valid matches found
+          if (allMatchIds.length === 0) {
+            console.log(
+              `[${region}] No matches above threshold found for summoner ${summoner.summonerId}`
+            );
+
+            // Still update the summoner to avoid refetching
+            await dbBackoff.withRetry(async () => {
+              await prisma.summoner.update({
+                where: { id: summoner.id },
+                data: { matchesFetchedAt: new Date() },
+              });
+            });
+            continue;
           }
 
           // Prepare batch create data
